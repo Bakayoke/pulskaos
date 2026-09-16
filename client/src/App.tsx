@@ -376,7 +376,38 @@ function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => void }
         <li>Labb</li>
         <li>Live</li>
       </ul>
+      <p className="sister-label">Fler party-spel</p>
+      <SisterGames />
     </section>
+  )
+}
+
+const SISTER_GAMES = [
+  { name: 'Factopia', href: 'https://factopia.net', hint: 'Blixtquiz' },
+  { name: 'Klotterkaos', href: 'https://klotterkaos.com', hint: 'Rita & sabba' },
+  { name: 'Kluddkrig', href: 'https://kluddkrig.com', hint: 'Doodle-fight' },
+  { name: 'Party Paths', href: 'https://partypaths.com', hint: 'Emoji-visklek' },
+  { name: 'Sabotext', href: 'https://sabotext.com', hint: 'SMS-kupp' },
+  { name: 'Your Task Is', href: 'https://yourtaskis.com', hint: 'Live-utmaning' },
+  { name: 'Scourgeborn', href: 'https://scourgeborn.com', hint: 'Labbpuls' },
+] as const
+
+function SisterGames({ compact }: { compact?: boolean } = {}) {
+  return (
+    <div className={`sister-games${compact ? ' compact' : ''}`}>
+      {SISTER_GAMES.map((g) => (
+        <a
+          key={g.href}
+          className="sister-game"
+          href={g.href}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <strong>{g.name}</strong>
+          {!compact && <span className="sister-hint">{g.hint}</span>}
+        </a>
+      ))}
+    </div>
   )
 }
 
@@ -999,6 +1030,9 @@ function WinnerView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }
           Avsluta
         </button>
       </div>
+
+      <p className="sister-label">Sug efter mer?</p>
+      <SisterGames compact />
     </section>
   )
 }

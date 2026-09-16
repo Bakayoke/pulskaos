@@ -1425,6 +1425,60 @@ textarea {
   gap: 0.35rem;
 }
 
+.sister-label {
+  margin: 1.75rem 0 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.sister-games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.sister-game {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  text-decoration: none;
+  color: var(--text);
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(20, 26, 36, 0.75);
+  font-size: 0.86rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.sister-game:hover {
+  border-color: rgba(214, 255, 63, 0.45);
+  background: rgba(214, 255, 63, 0.08);
+}
+
+.sister-game strong {
+  font-weight: 700;
+}
+
+.sister-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.sister-games.compact .sister-game {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.65rem;
+}
+
+body.tv-mode .sister-label,
+body.tv-mode .sister-games {
+  display: none;
+}
+
 input {
   width: 100%;
   border-radius: 12px;
