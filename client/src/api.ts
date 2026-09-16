@@ -97,7 +97,10 @@ export const rematchGame = () => emitAck('rematch')
 export const setLanguage = (language: 'sv' | 'en') => emitAck('setLanguage', { language })
 export const setHostPlaying = (playing: boolean) => emitAck('setHostPlaying', { playing })
 export const pulseHit = (noteId: string, lane: number) =>
-  emitAck<{ ok?: boolean; grade?: string; error?: string }>('pulseHit', { noteId, lane })
+  emitAck<{ ok?: boolean; grade?: string; points?: number; streak?: number; error?: string }>(
+    'pulseHit',
+    { noteId, lane },
+  )
 export const useSabotage = (targetId: string) => emitAck('sabotage', { targetId })
 export const blitzAnswer = (index: number) => emitAck('blitzAnswer', { index })
 export const smsDraft = (text: string) => emitAck('smsDraft', { text })

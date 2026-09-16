@@ -33,7 +33,7 @@ export type PulseNote = {
   sync: boolean
 }
 
-export type PulseHitGrade = 'perfect' | 'good' | 'miss'
+export type PulseHitGrade = 'perfect' | 'good' | 'almost' | 'early' | 'late' | 'miss'
 
 export type PulseState = {
   kind: 'warmup' | 'bridge' | 'finale'
@@ -44,6 +44,8 @@ export type PulseState = {
   hits: Record<string, Record<string, PulseHitGrade>>
   syncResults: Record<string, { hit: number; miss: number; resolved: boolean }>
   multiplier: number
+  /** Latest grade per player for TV crowd board */
+  lastGrades: Record<string, PulseHitGrade>
 }
 
 export type BlitzState = {
@@ -155,12 +157,21 @@ export type Room = {
   lastReveal: RevealPayload | null
   language: 'sv' | 'en'
   lastMults: Record<string, number>
+  banner: RoomBanner | null
 }
 
 export type RevealPayload = {
   title: string
   lines: string[]
   scores: { id: string; name: string; delta: number; score: number }[]
+  stoleLead?: { name: string; fromName: string } | null
+  drama?: string | null
+}
+
+export type RoomBanner = {
+  text: string
+  kind: 'sync' | 'sabotage' | 'finale' | 'info' | 'drama'
+  until: number
 }
 
 export type PublicPlayer = {
@@ -188,6 +199,13 @@ export type PublicRoom = {
   pulse: (Omit<PulseState, 'hits'> & {
     yourHits: Record<string, PulseHitGrade>
     yourMultiplier: number
+    crowd: {
+      id: string
+      name: string
+      lastGrade: PulseHitGrade | null
+      streak: number
+      score: number
+    }[]
   }) | null
   micro: PublicMicro | null
   saboteurId: string | null
@@ -199,6 +217,8 @@ export type PublicRoom = {
   language: 'sv' | 'en'
   serverNow: number
   playingCount: number
+  banner: RoomBanner | null
+  yourStreak: number
 }
 
 export type PublicMicro =

@@ -407,8 +407,11 @@ export function resolveSms(room: Room, reveal: RevealFn) {
   }
   reveal(room, {
     title: room.language === 'sv' ? 'Sms-kupp' : 'Text heist',
-    lines: room.echo.bestSms ? [`“${room.echo.bestSms.text}”`] : [],
+    lines: room.echo.bestSms
+      ? [`Vinnare: ${room.echo.bestSms.authorName}`, `“${room.echo.bestSms.text}”`]
+      : [],
     scores: scoreRows(room, deltas),
+    drama: room.echo.bestSms ? `Bästa kuppen av ${room.echo.bestSms.authorName}` : null,
   })
 }
 
@@ -436,7 +439,14 @@ export function resolveEmoji(room: Room, reveal: RevealFn) {
   }
   reveal(room, {
     title: room.language === 'sv' ? 'Emoji-hopp' : 'Emoji hop',
-    lines: ['Korrekta gissningar ger Pulse-boostad poäng'],
+    lines: Object.entries(e.guesses)
+      .slice(0, 3)
+      .map(([gid, guess]) => {
+        const authorId = e.assignments[gid]
+        const word = authorId ? e.words[authorId] : '?'
+        const name = room.players.find((p) => p.id === gid)?.name ?? '?'
+        return `${name}: “${guess}” ← ${word}`
+      }),
     scores: scoreRows(room, deltas),
   })
 }

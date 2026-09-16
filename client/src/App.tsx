@@ -17,10 +17,11 @@ import {
 import { MicroView } from './MicroViews'
 import { getRecord, recordResult, taunt } from './rivalry'
 import {
-  hitGood,
-  hitMiss,
-  hitPerfect,
+  countdownBeep,
+  dramaSting,
   isMuted,
+  leadSteal,
+  playGrade,
   setMuted,
   syncBoom,
   tickPulse,
@@ -328,23 +329,40 @@ function PlayView({
 
   if (room.status === 'lobby')
     return <Lobby room={room} tvMode={tvMode} setTvMode={setTvMode} onLeave={onLeave} />
-  if (room.status === 'pulse' && room.pulse)
-    return <PulseView room={room} tvMode={tvMode} spectating={spectating} />
-  if (room.status === 'micro' && room.micro)
-    return (
-      <section className="play">
-        {(tvMode || spectating) && (
-          <p className="tv-wait">
-            {spectating ? 'Du hostar — spelarna kör på mobilen' : 'TV-läge'} · {room.playingCount} spelare
-          </p>
-        )}
-        <MicroView room={room} tvMode={tvMode || spectating} />
-        <ScoreRail room={room} />
-      </section>
-    )
-  if (room.status === 'reveal' && room.lastReveal) return <RevealView room={room} />
-  if (room.status === 'finished') return <WinnerView room={room} onLeave={onLeave} />
-  return <p className="muted">Laddar…</p>
+  return (
+    <>
+      {room.banner && <Banner key={room.banner.text + room.banner.until} banner={room.banner} />}
+      {room.status === 'pulse' && room.pulse && (
+        <PulseView room={room} tvMode={tvMode} spectating={spectating} />
+      )}
+      {room.status === 'micro' && room.micro && (
+        <section className="play">
+          {(tvMode || spectating) && (
+            <p className="tv-wait">
+              {spectating ? 'Du hostar — spelarna kör på mobilen' : 'TV-läge'} · {room.playingCount}{' '}
+              spelare
+            </p>
+          )}
+          <MicroView room={room} tvMode={tvMode || spectating} />
+          <ScoreRail room={room} />
+        </section>
+      )}
+      {room.status === 'reveal' && room.lastReveal && <RevealView room={room} />}
+      {room.status === 'finished' && <WinnerView room={room} onLeave={onLeave} />}
+      {room.status !== 'pulse' &&
+        room.status !== 'micro' &&
+        room.status !== 'reveal' &&
+        room.status !== 'finished' && <p className="muted">Laddar…</p>}
+    </>
+  )
+}
+
+function Banner({ banner }: { banner: NonNullable<PublicRoom['banner']> }) {
+  useEffect(() => {
+    if (banner.kind === 'sabotage' || banner.kind === 'drama') dramaSting()
+    if (banner.kind === 'finale' || banner.kind === 'sync') syncBoom()
+  }, [banner.kind, banner.text])
+  return <div className={`room-banner ${banner.kind}`}>{banner.text}</div>
 }
 
 function ScoreRail({ room }: { room: PublicRoom }) {
@@ -506,7 +524,9 @@ function PulseView({
   const pulse = room.pulse!
   const [now, setNow] = useState(Date.now())
   const [flash, setFlash] = useState<PulseHitGrade | null>(null)
-  const lastBeat = useRef(0)
+  const [pointsPop, setPointsPop] = useState<number | null>(null)
+  const lastBeat = useRef(-1)
+  const lastCountdown = useRef(-1)
   const skew = useRef(room.serverNow - Date.now())
   const displayOnly = tvMode || spectating
 
@@ -519,38 +539,52 @@ function PulseView({
     return () => clearInterval(id)
   }, [])
 
+  const beatMs = 60_000 / pulse.bpm
+  const firstNote = pulse.notes[0]?.hitAt ?? pulse.startedAt + beatMs * 2
+  const tutorialActive = pulse.kind === 'warmup' && now < firstNote
+  const countdownLeft = Math.ceil((firstNote - now) / 1000)
+
   useEffect(() => {
-    const beatMs = 60_000 / pulse.bpm
     const elapsed = now - pulse.startedAt
     const beat = Math.floor(elapsed / beatMs)
     if (beat !== lastBeat.current && beat >= 0) {
       lastBeat.current = beat
       tickPulse()
     }
-  }, [now, pulse.bpm, pulse.startedAt])
+  }, [now, beatMs, pulse.startedAt])
+
+  useEffect(() => {
+    if (!tutorialActive) return
+    if (countdownLeft >= 1 && countdownLeft <= 3 && countdownLeft !== lastCountdown.current) {
+      lastCountdown.current = countdownLeft
+      countdownBeep(countdownLeft)
+    }
+  }, [tutorialActive, countdownLeft])
 
   const onHit = useEffectEvent(async (lane: 0 | 1 | 2) => {
-    if (displayOnly) return
+    if (displayOnly || tutorialActive) return
     const upcoming = pulse.notes
       .filter((n) => n.lane === lane && !pulse.yourHits[n.id])
       .sort((a, b) => Math.abs(a.hitAt - now) - Math.abs(b.hitAt - now))[0]
     if (!upcoming) {
-      hitMiss()
+      playGrade('miss')
       setFlash('miss')
+      setPointsPop(null)
       return
     }
-    if (Math.abs(upcoming.hitAt - now) > 220) {
-      hitMiss()
+    if (Math.abs(upcoming.hitAt - now) > 300) {
+      playGrade('miss')
       setFlash('miss')
+      setPointsPop(null)
       return
     }
     const res = await pulseHit(upcoming.id, lane)
     const grade = (res.grade as PulseHitGrade) || 'miss'
+    const streak = res.streak ?? room.yourStreak
     setFlash(grade)
-    if (grade === 'perfect') hitPerfect()
-    else if (grade === 'good') hitGood()
-    else hitMiss()
-    if (upcoming.sync) syncBoom()
+    setPointsPop(res.points && res.points > 0 ? res.points : null)
+    playGrade(grade, streak)
+    if (upcoming.sync && (grade === 'perfect' || grade === 'good' || grade === 'almost')) syncBoom()
   })
 
   useEffect(() => {
@@ -567,6 +601,20 @@ function PulseView({
   const travel = 1400
   const kindLabel =
     pulse.kind === 'warmup' ? 'Warmup' : pulse.kind === 'finale' ? 'Pulse-Off' : 'Bridge'
+  const gradeLabel =
+    flash === 'perfect'
+      ? 'PERFECT'
+      : flash === 'good'
+        ? 'GOOD'
+        : flash === 'almost'
+          ? 'ALMOST'
+          : flash === 'early'
+            ? 'EARLY'
+            : flash === 'late'
+              ? 'LATE'
+              : flash === 'miss'
+                ? 'MISS'
+                : ''
 
   return (
     <section className="play pulse-play">
@@ -578,9 +626,14 @@ function PulseView({
           </h2>
         </div>
         {!displayOnly && (
-          <div className="mult">
-            ×{pulse.yourMultiplier.toFixed(2)}
-            <span>mult</span>
+          <div className="mult-stack">
+            <div className="mult">
+              ×{pulse.yourMultiplier.toFixed(2)}
+              <span>mult</span>
+            </div>
+            <div className="streak-meter">
+              Streak <strong>{room.yourStreak}</strong>
+            </div>
           </div>
         )}
         {displayOnly && (
@@ -591,8 +644,29 @@ function PulseView({
         )}
       </div>
 
-      {displayOnly && (
-        <p className="tv-wait">Spelarna träffar pulsen på sina telefoner</p>
+      {tutorialActive && (
+        <div className="pulse-tutorial">
+          {countdownLeft > 0 ? (
+            <span className="countdown-num">{countdownLeft}</span>
+          ) : (
+            <span className="countdown-num go">GO</span>
+          )}
+          <p>Träffa den gröna linjen · A / S / D</p>
+        </div>
+      )}
+
+      {displayOnly && <p className="tv-wait">Spelarna träffar pulsen på sina telefoner</p>}
+
+      {displayOnly && pulse.crowd.length > 0 && (
+        <div className="crowd-board">
+          {pulse.crowd.map((c) => (
+            <div key={c.id} className={`crowd-chip ${c.lastGrade ?? ''}`}>
+              <strong>{c.name}</strong>
+              <span>{c.lastGrade ? c.lastGrade.toUpperCase() : '—'}</span>
+              <em>×{c.streak}</em>
+            </div>
+          ))}
+        </div>
       )}
 
       <div className={`lane-stage ${flash ? `flash-${flash}` : ''} ${displayOnly ? 'tv-lanes' : ''}`}>
@@ -631,7 +705,8 @@ function PulseView({
 
       {flash && !displayOnly && (
         <div className={`grade-pop ${flash}`} key={flash + String(now)}>
-          {flash === 'perfect' ? 'PERFECT' : flash === 'good' ? 'GOOD' : 'MISS'}
+          {gradeLabel}
+          {pointsPop ? <span className="pts-pop">+{pointsPop}</span> : null}
         </div>
       )}
 
@@ -659,19 +734,39 @@ function PulseView({
 
 function RevealView({ room }: { room: PublicRoom }) {
   const r = room.lastReveal!
+  const [shown, setShown] = useState(0)
+  useEffect(() => {
+    setShown(0)
+    if (r.stoleLead) leadSteal()
+    else if (r.drama) dramaSting()
+    const id = setInterval(() => setShown((n) => n + 1), 180)
+    return () => clearInterval(id)
+  }, [r])
+
   return (
     <section className="play reveal">
       <p className="eyebrow">Poäng</p>
-      <h2>{r.title}</h2>
+      <h2 className="reveal-title">{r.title}</h2>
+      {r.stoleLead && (
+        <p className="stole-banner">
+          {r.stoleLead.name} stal ledningen från {r.stoleLead.fromName}!
+        </p>
+      )}
+      {r.drama && !r.stoleLead && <p className="stole-banner soft">{r.drama}</p>}
       {r.lines.map((l) => (
         <p key={l} className="lede">
           {l}
         </p>
       ))}
       <ol className="reveal-scores">
-        {r.scores.map((s) => (
-          <li key={s.id} className={s.id === room.youId ? 'you' : ''}>
-            <span>{s.name}</span>
+        {r.scores.map((s, i) => (
+          <li
+            key={s.id}
+            className={`${s.id === room.youId ? 'you' : ''} ${shown > i ? 'in' : 'out'}`}
+          >
+            <span>
+              #{i + 1} {s.name}
+            </span>
             <span className={s.delta > 0 ? 'up' : ''}>
               {s.delta > 0 ? `+${s.delta}` : s.delta} · {s.score}
             </span>
@@ -762,7 +857,7 @@ function WinnerView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }
               void rematchGame()
             }}
           >
-            Rematch · Heat {Math.min(5, room.heat + 1)}
+            Rematch · Heat {Math.min(5, room.heat + 1)} — direkt!
           </button>
         )}
         {!isHost && <p className="muted">Host startar rematch…</p>}

@@ -208,6 +208,195 @@ button {
   width: 100%;
 }
 
+.room-banner {
+  position: fixed;
+  top: 4.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 0.75rem 1.4rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(1rem, 3.5vw, 1.35rem);
+  letter-spacing: -0.02em;
+  animation: bannerIn 0.35s ease both;
+  pointer-events: none;
+  text-align: center;
+  max-width: 90vw;
+}
+
+.room-banner.sync,
+.room-banner.info {
+  background: rgba(214, 255, 63, 0.92);
+  color: #0a0c10;
+}
+
+.room-banner.sabotage,
+.room-banner.drama {
+  background: rgba(255, 59, 92, 0.95);
+  color: #fff;
+}
+
+.room-banner.finale {
+  background: linear-gradient(135deg, #ff3b5c, #ffb020);
+  color: #fff;
+  box-shadow: 0 0 40px rgba(255, 59, 92, 0.45);
+}
+
+@keyframes bannerIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.pulse-tutorial {
+  text-align: center;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.countdown-num {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 14vw, 5rem);
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  text-shadow: 0 0 40px rgba(214, 255, 63, 0.4);
+}
+
+.countdown-num.go {
+  color: var(--brand);
+}
+
+.mult-stack {
+  text-align: right;
+}
+
+.streak-meter {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.streak-meter strong {
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.pts-pop {
+  display: block;
+  font-size: 0.55em;
+  color: var(--accent);
+  margin-top: 0.15rem;
+}
+
+.crowd-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.crowd-chip {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  min-width: 4.5rem;
+  text-align: center;
+}
+
+.crowd-chip strong {
+  font-size: 0.78rem;
+}
+
+.crowd-chip span {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.crowd-chip.perfect span {
+  color: var(--accent);
+}
+
+.crowd-chip.good span {
+  color: var(--warn);
+}
+
+.crowd-chip.miss span,
+.crowd-chip.early span,
+.crowd-chip.late span {
+  color: var(--brand);
+}
+
+.crowd-chip em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.lane-stage.flash-almost {
+  box-shadow: inset 0 0 0 2px rgba(255, 176, 32, 0.35);
+}
+
+.lane-stage.flash-early,
+.lane-stage.flash-late {
+  box-shadow: inset 0 0 0 2px rgba(255, 92, 92, 0.35);
+}
+
+.grade-pop.almost {
+  color: var(--warn);
+}
+
+.grade-pop.early,
+.grade-pop.late {
+  color: #ff8a9c;
+}
+
+.stole-banner {
+  margin: 0;
+  padding: 0.65rem 1rem;
+  border-radius: 12px;
+  background: rgba(214, 255, 63, 0.12);
+  border: 1px solid rgba(214, 255, 63, 0.35);
+  color: var(--accent);
+  font-weight: 700;
+  text-align: center;
+}
+
+.stole-banner.soft {
+  background: rgba(255, 59, 92, 0.12);
+  border-color: rgba(255, 59, 92, 0.3);
+  color: #ff8a9c;
+}
+
+.reveal-scores li.out {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.reveal-scores li.in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.ready-count {
+  text-align: center;
+  font-size: 0.9rem;
+}
+
 .topbar {
   position: relative;
   z-index: 1;

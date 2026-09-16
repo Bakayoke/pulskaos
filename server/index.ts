@@ -190,7 +190,12 @@ io.on('connection', (socket) => {
       Number(data?.lane ?? -1),
     )
     if ('error' in result) return ack?.({ error: result.error })
-    ack?.({ ok: true, grade: result.grade })
+    ack?.({
+      ok: true,
+      grade: result.grade,
+      points: result.points,
+      streak: result.streak,
+    })
     broadcastRoom(binding.code)
   })
 

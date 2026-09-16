@@ -174,6 +174,9 @@ export function MicroView({ room, tvMode = false }: { room: PublicRoom; tvMode?:
             </button>
           ))}
         </div>
+        <p className="muted ready-count">
+          {micro.answeredCount}/{room.playingCount} svarade
+        </p>
       </section>
     )
   }
@@ -323,6 +326,11 @@ function SmsView({ room }: { room: PublicRoom }) {
           ))}
         </div>
       )}
+      <p className="muted ready-count">
+        {micro.phase === 'write' && `${micro.draftCount}/${room.playingCount} skrivit`}
+        {micro.phase === 'sabotage' && `${micro.sabotageCount}/${room.playingCount} sabbat`}
+        {micro.phase === 'vote' && `${micro.voteCount}/${room.playingCount} röstat`}
+      </p>
     </section>
   )
 }
@@ -365,6 +373,11 @@ function EmojiView({ room }: { room: PublicRoom }) {
           )}
         </>
       )}
+      <p className="muted ready-count">
+        {micro.phase === 'emoji'
+          ? `${micro.emojiCount}/${room.playingCount} emoji`
+          : `${micro.guessCount}/${room.playingCount} gissat`}
+      </p>
     </section>
   )
 }
@@ -402,6 +415,11 @@ function KlotterView({ room }: { room: PublicRoom }) {
           ))}
         </div>
       )}
+      <p className="muted ready-count">
+        {micro.phase === 'draw'
+          ? `${micro.drawCount}/${room.playingCount} ritat`
+          : `${micro.voteCount}/${room.playingCount} röstat`}
+      </p>
     </section>
   )
 }
@@ -524,6 +542,11 @@ function LiveView({ room }: { room: PublicRoom }) {
         </div>
       )}
       {micro.phase === 'score' && !micro.isHost && <p className="muted">Host betygsätter…</p>}
+      {micro.phase === 'play' && (
+        <p className="muted ready-count">
+          {micro.doneCount}/{room.playingCount} klara
+        </p>
+      )}
     </section>
   )
 }

@@ -20,10 +20,11 @@ import {
 import {
   buildPulseChart,
   gradeHit,
+  isHitGrade,
   multiplierFromHits,
   pulsePoints,
 } from './pulse.js'
-import type { EchoBag, Player, PublicRoom, RevealPayload, Room, StrokePoint } from './types.js'
+import type { EchoBag, Player, PublicRoom, RevealPayload, Room, RoomBanner, StrokePoint } from './types.js'
 
 const codeAlpha = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ', 4)
 const idAlpha = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10)
@@ -78,9 +79,11 @@ export function hydrateRooms(list: Room[]) {
     if (!r.echo.avatars) r.echo.avatars = {}
     if (!r.echo.emojiFails) r.echo.emojiFails = []
     if (!r.lastMults) r.lastMults = {}
+    if (!r.banner) r.banner = null
     for (const p of r.players) {
       if (typeof p.playing !== 'boolean') p.playing = !p.host
     }
+    if (r.pulse && !r.pulse.lastGrades) r.pulse.lastGrades = {}
     rooms.set(r.code, r)
   }
 }
@@ -99,13 +102,40 @@ function emptyEcho(): EchoBag {
   return { wrongGuesses: [], highlights: [], avatars: {}, emojiFails: [] }
 }
 
-function showReveal(room: Room, payload: RevealPayload, ms = 4500) {
+function setBanner(room: Room, text: string, kind: RoomBanner['kind'], ms = 2800) {
+  room.banner = { text, kind, until: Date.now() + ms }
+}
+
+function showReveal(room: Room, payload: RevealPayload, ms = 5200) {
   room.status = 'reveal'
   room.lastReveal = payload
   room.revealUntil = Date.now() + ms
   room.pulse = null
   room.micro = null
   touch(room)
+}
+
+function enrichReveal(room: Room, payload: RevealPayload, prevLeaderId: string | null): RevealPayload {
+  const ranked = [...payload.scores].sort((a, b) => b.score - a.score)
+  const leader = ranked[0]
+  let stoleLead: RevealPayload['stoleLead'] = null
+  if (leader && prevLeaderId && leader.id !== prevLeaderId && (leader.delta ?? 0) > 0) {
+    const from = room.players.find((p) => p.id === prevLeaderId)
+    if (from) stoleLead = { name: leader.name, fromName: from.name }
+  }
+  return { ...payload, stoleLead: stoleLead ?? payload.stoleLead ?? null }
+}
+
+function currentLeaderId(room: Room): string | null {
+  const ranked = [...room.players].filter((p) => p.playing).sort((a, b) => b.score - a.score)
+  return ranked[0]?.id ?? null
+}
+
+function dramaReveal(room: Room) {
+  const prev = currentLeaderId(room)
+  return (r: Room, payload: RevealPayload, ms?: number) => {
+    showReveal(r, enrichReveal(r, payload, prev), ms)
+  }
 }
 
 export function createRoom(
@@ -151,6 +181,7 @@ export function createRoom(
     lastReveal: null,
     language,
     lastMults: {},
+    banner: null,
   }
 
   rooms.set(code, room)
@@ -315,11 +346,9 @@ export function rematch(code: string, playerId: string) {
 
   room.heat = Math.min(5, room.heat + 1)
   room.night += 1
-  room.status = 'lobby'
   room.pulse = null
   room.micro = null
   room.round = 0
-  room.schedule = []
   room.currentMicro = null
   room.lastReveal = null
   room.revealUntil = null
@@ -337,6 +366,12 @@ export function rematch(code: string, playerId: string) {
     if (!p.host) p.playing = true
   }
   room.lastMults = {}
+  room.schedule = buildSchedule(room.heat)
+  room.totalRounds = room.schedule.length
+  pickSaboteur(room)
+  setBanner(room, `Heat ${room.heat} — kör!`, 'info', 2200)
+  beginPulse(room, room.heat >= 5 ? 'finale' : 'warmup')
+  if (room.heat >= 5) setBanner(room, 'HEAT 5 — RENT PULSE-OFF', 'finale', 3500)
   touch(room)
   return { room }
 }
@@ -410,8 +445,9 @@ function advanceAfterPulse(room: Room) {
   }
 
   if (room.round >= room.schedule.length) {
-    const sorted = [...room.players].sort((a, b) => b.score - a.score)
+    const sorted = [...room.players].filter((p) => p.playing).sort((a, b) => b.score - a.score)
     if (sorted.length >= 2 && sorted[0]!.score - sorted[1]!.score <= 400) {
+      setBanner(room, 'PULSE-OFF — för jämt!', 'finale', 4000)
       beginPulse(room, 'finale')
       return
     }
@@ -426,8 +462,9 @@ function advanceAfterPulse(room: Room) {
 
 function advanceAfterMicro(room: Room) {
   if (room.round >= room.schedule.length) {
-    const sorted = [...room.players].sort((a, b) => b.score - a.score)
+    const sorted = [...room.players].filter((p) => p.playing).sort((a, b) => b.score - a.score)
     if (sorted.length >= 2 && sorted[0]!.score - sorted[1]!.score <= 400) {
+      setBanner(room, 'PULSE-OFF — för jämt!', 'finale', 4000)
       beginPulse(room, 'finale')
       return
     }
@@ -450,33 +487,42 @@ export function submitPulseHit(code: string, playerId: string, noteId: string, l
   const hits = room.pulse.hits[playerId] ?? {}
   if (hits[noteId]) return { ok: true, grade: hits[noteId] }
 
-  const grade = gradeHit(Date.now() - note.hitAt - 40)
+  const delta = Date.now() - note.hitAt - 40
+  const grade = gradeHit(delta)
   hits[noteId] = grade
   room.pulse.hits[playerId] = hits
+  room.pulse.lastGrades[playerId] = grade
 
-  if (grade === 'miss') player.streak = 0
-  else {
+  let points = 0
+  if (!isHitGrade(grade)) {
+    player.streak = 0
+  } else {
     player.streak += 1
-    player.score += pulsePoints(grade, player.streak)
+    points = pulsePoints(grade, player.streak)
+    player.score += points
   }
 
   if (note.sync) {
     const syn = room.pulse.syncResults[note.id] ?? { hit: 0, miss: 0, resolved: false }
-    if (grade === 'miss') syn.miss += 1
+    if (!isHitGrade(grade)) syn.miss += 1
     else syn.hit += 1
     const needed = Math.max(1, activePlayers(room).length)
     if (!syn.resolved && syn.hit + syn.miss >= needed) {
       syn.resolved = true
       if (syn.hit >= syn.miss) {
-        for (const p of living(room)) p.score += 80
+        for (const p of activePlayers(room)) p.score += 80
         room.echo.highlights.push('Sync Hit! Rummet i fas')
-      } else room.echo.highlights.push('Sync Miss — kaos!')
+        setBanner(room, 'SYNC HIT — alla i fas!', 'sync', 2500)
+      } else {
+        room.echo.highlights.push('Sync Miss — kaos!')
+        setBanner(room, 'SYNC MISS — kaos!', 'drama', 2500)
+      }
     }
     room.pulse.syncResults[note.id] = syn
   }
 
   touch(room)
-  return { ok: true, grade }
+  return { ok: true, grade, points, streak: player.streak }
 }
 
 export function useSabotage(code: string, playerId: string, targetId: string) {
@@ -509,6 +555,7 @@ export function useSabotage(code: string, playerId: string, targetId: string) {
 
   room.saboteurCharges -= 1
   room.echo.highlights.push(`Sabotage! ${target.name}`)
+  setBanner(room, `💥 ${target.name} saboterad!`, 'sabotage', 3000)
   touch(room)
   return { ok: true }
 }
@@ -528,7 +575,7 @@ export function submitBlitzAnswer(code: string, playerId: string, index: number)
     if (wrong && !room.echo.wrongGuesses.includes(wrong)) room.echo.wrongGuesses.push(wrong)
   }
   touch(room)
-  if (Object.keys(blitz.answers).length >= activePlayers(room).length) resolveBlitz(room, showReveal)
+  if (Object.keys(blitz.answers).length >= activePlayers(room).length) resolveBlitz(room, dramaReveal(room))
   return { ok: true }
 }
 
@@ -578,7 +625,7 @@ export function submitSmsVote(code: string, playerId: string, targetId: string) 
   if (!sms.sabotaged[targetId]) return { error: 'Ogiltig' }
   sms.votes[playerId] = targetId
   touch(room)
-  if (Object.keys(sms.votes).length >= activePlayers(room).length) resolveSms(room, showReveal)
+  if (Object.keys(sms.votes).length >= activePlayers(room).length) resolveSms(room, dramaReveal(room))
   return { ok: true }
 }
 
@@ -609,7 +656,7 @@ export function submitEmojiGuess(code: string, playerId: string, text: string) {
   if (!clean) return { error: 'Tomt' }
   e.guesses[playerId] = clean
   touch(room)
-  if (Object.keys(e.guesses).length >= activePlayers(room).length) resolveEmoji(room, showReveal)
+  if (Object.keys(e.guesses).length >= activePlayers(room).length) resolveEmoji(room, dramaReveal(room))
   return { ok: true }
 }
 
@@ -637,7 +684,7 @@ export function submitKlotterVote(code: string, playerId: string, targetId: stri
   if (!k.drawings[targetId]) return { error: 'Ogiltig' }
   k.votes[playerId] = targetId
   touch(room)
-  if (Object.keys(k.votes).length >= activePlayers(room).length) resolveKlotter(room, showReveal)
+  if (Object.keys(k.votes).length >= activePlayers(room).length) resolveKlotter(room, dramaReveal(room))
   return { ok: true }
 }
 
@@ -709,7 +756,7 @@ export function liveScore(code: string, hostId: string, targetId: string, stars:
   live.scores[targetId] = s
   touch(room)
   const contestants = room.players.filter((p) => p.playing)
-  if (contestants.every((p) => live.scores[p.id] != null)) resolveLive(room, showReveal)
+  if (contestants.every((p) => live.scores[p.id] != null)) resolveLive(room, dramaReveal(room))
   return { ok: true }
 }
 
@@ -728,7 +775,7 @@ export function tickRooms(): string[] {
     if (room.status === 'micro' && room.micro) {
       const m = room.micro
       if (m.kind === 'blitz' && now >= m.blitz.endsAt) {
-        resolveBlitz(room, showReveal)
+        resolveBlitz(room, dramaReveal(room))
         dirty = true
       } else if (m.kind === 'sms' && now >= m.sms.endsAt) {
         if (m.sms.phase === 'write') {
@@ -747,7 +794,7 @@ export function tickRooms(): string[] {
           enterSmsVote(room)
           dirty = true
         } else {
-          resolveSms(room, showReveal)
+          resolveSms(room, dramaReveal(room))
           dirty = true
         }
       } else if (m.kind === 'emoji' && now >= m.emoji.endsAt) {
@@ -755,7 +802,7 @@ export function tickRooms(): string[] {
           enterEmojiGuess(room)
           dirty = true
         } else {
-          resolveEmoji(room, showReveal)
+          resolveEmoji(room, dramaReveal(room))
           dirty = true
         }
       } else if (m.kind === 'klotter' && now >= m.klotter.endsAt) {
@@ -763,14 +810,14 @@ export function tickRooms(): string[] {
           enterKlotterVote(room)
           dirty = true
         } else {
-          resolveKlotter(room, showReveal)
+          resolveKlotter(room, dramaReveal(room))
           dirty = true
         }
       } else if (m.kind === 'arena' && now >= m.arena.endsAt) {
-        resolveArena(room, showReveal)
+        resolveArena(room, dramaReveal(room))
         dirty = true
       } else if (m.kind === 'labb' && now >= m.labb.endsAt) {
-        resolveLabb(room, showReveal)
+        resolveLabb(room, dramaReveal(room))
         dirty = true
       } else if (m.kind === 'live' && now >= m.live.endsAt) {
         if (m.live.phase === 'play') {
@@ -780,7 +827,7 @@ export function tickRooms(): string[] {
           for (const p of room.players.filter((x) => x.playing)) {
             if (m.live.scores[p.id] == null) m.live.scores[p.id] = m.live.done[p.id] ? 3 : 1
           }
-          resolveLive(room, showReveal)
+          resolveLive(room, dramaReveal(room))
           dirty = true
         }
       }
@@ -788,6 +835,11 @@ export function tickRooms(): string[] {
 
     if (room.status === 'reveal' && room.revealUntil && now >= room.revealUntil) {
       advanceAfterMicro(room)
+      dirty = true
+    }
+
+    if (room.banner && now >= room.banner.until) {
+      room.banner = null
       dirty = true
     }
 
@@ -801,6 +853,7 @@ export function tickRooms(): string[] {
 }
 
 export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
+  const you = viewerId ? room.players.find((p) => p.id === viewerId) : null
   const pulse = room.pulse
     ? {
         kind: room.pulse.kind,
@@ -810,10 +863,24 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
         notes: room.pulse.notes,
         syncResults: room.pulse.syncResults,
         multiplier: room.pulse.multiplier,
+        lastGrades: room.pulse.lastGrades,
         yourHits: viewerId ? room.pulse.hits[viewerId] ?? {} : {},
         yourMultiplier: viewerId ? playerPulseMult(room, viewerId) : room.pulse.multiplier,
+        crowd: room.players
+          .filter((p) => p.playing)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            lastGrade: room.pulse!.lastGrades[p.id] ?? null,
+            streak: p.streak,
+            score: p.score,
+          }))
+          .sort((a, b) => b.score - a.score),
       }
     : null
+
+  const banner =
+    room.banner && room.banner.until > Date.now() ? room.banner : null
 
   return {
     code: room.code,
@@ -846,5 +913,7 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
     language: room.language,
     serverNow: Date.now(),
     playingCount: room.players.filter((p) => p.playing && p.connected).length,
+    banner,
+    yourStreak: you?.streak ?? 0,
   }
 }

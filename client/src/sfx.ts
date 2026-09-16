@@ -39,14 +39,23 @@ export function tickPulse() {
   if (navigator.vibrate) navigator.vibrate(12)
 }
 
-export function hitPerfect() {
-  beep(880, 0.07, 'square', 0.05)
-  beep(1320, 0.05, 'sine', 0.03)
+export function hitPerfect(streak = 1) {
+  const bump = Math.min(8, streak) * 40
+  beep(880 + bump, 0.07, 'square', 0.05)
+  beep(1320 + bump, 0.05, 'sine', 0.03)
   if (navigator.vibrate) navigator.vibrate(20)
 }
 
 export function hitGood() {
   beep(520, 0.06, 'square', 0.04)
+}
+
+export function hitAlmost() {
+  beep(360, 0.05, 'triangle', 0.035)
+}
+
+export function hitEarlyLate() {
+  beep(200, 0.06, 'sawtooth', 0.03)
 }
 
 export function hitMiss() {
@@ -59,6 +68,21 @@ export function syncBoom() {
   beep(220, 0.1, 'sine', 0.04)
 }
 
+export function dramaSting() {
+  beep(150, 0.12, 'sawtooth', 0.05)
+  setTimeout(() => beep(90, 0.15, 'triangle', 0.05), 80)
+}
+
+export function leadSteal() {
+  beep(440, 0.08)
+  setTimeout(() => beep(660, 0.1), 70)
+  setTimeout(() => beep(880, 0.14), 140)
+}
+
+export function countdownBeep(n: number) {
+  beep(n <= 1 ? 660 : 330, 0.08, 'square', 0.045)
+}
+
 export function uiClick() {
   beep(440, 0.03, 'square', 0.025)
 }
@@ -67,4 +91,15 @@ export function winFanfare() {
   beep(523, 0.1)
   setTimeout(() => beep(659, 0.1), 90)
   setTimeout(() => beep(784, 0.18), 180)
+}
+
+export function playGrade(
+  grade: 'perfect' | 'good' | 'almost' | 'early' | 'late' | 'miss',
+  streak = 1,
+) {
+  if (grade === 'perfect') hitPerfect(streak)
+  else if (grade === 'good') hitGood()
+  else if (grade === 'almost') hitAlmost()
+  else if (grade === 'early' || grade === 'late') hitEarlyLate()
+  else hitMiss()
 }

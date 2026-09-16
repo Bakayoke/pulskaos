@@ -11,7 +11,7 @@ export type SmsPhase = 'write' | 'sabotage' | 'vote'
 export type EmojiPhase = 'emoji' | 'guess'
 export type KlotterPhase = 'draw' | 'vote'
 export type LivePhase = 'play' | 'score'
-export type PulseHitGrade = 'perfect' | 'good' | 'miss'
+export type PulseHitGrade = 'perfect' | 'good' | 'almost' | 'early' | 'late' | 'miss'
 export type StrokePoint = { x: number; y: number }
 
 export type PublicPlayer = {
@@ -29,6 +29,12 @@ export type PulseNote = {
   lane: 0 | 1 | 2
   hitAt: number
   sync: boolean
+}
+
+export type RoomBanner = {
+  text: string
+  kind: 'sync' | 'sabotage' | 'finale' | 'info' | 'drama'
+  until: number
 }
 
 export type PublicMicro =
@@ -140,8 +146,16 @@ export type PublicRoom = {
     notes: PulseNote[]
     syncResults: Record<string, { hit: number; miss: number; resolved: boolean }>
     multiplier: number
+    lastGrades: Record<string, PulseHitGrade>
     yourHits: Record<string, PulseHitGrade>
     yourMultiplier: number
+    crowd: {
+      id: string
+      name: string
+      lastGrade: PulseHitGrade | null
+      streak: number
+      score: number
+    }[]
   } | null
   micro: PublicMicro | null
   saboteurId: string | null
@@ -159,8 +173,12 @@ export type PublicRoom = {
     title: string
     lines: string[]
     scores: { id: string; name: string; delta: number; score: number }[]
+    stoleLead?: { name: string; fromName: string } | null
+    drama?: string | null
   } | null
   language: 'sv' | 'en'
   serverNow: number
   playingCount: number
+  banner: RoomBanner | null
+  yourStreak: number
 }
