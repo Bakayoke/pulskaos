@@ -494,18 +494,24 @@ function LiveView({ room }: { room: PublicRoom }) {
   const micro = room.micro!
   if (micro.kind !== 'live') return null
   const [text, setText] = useState('')
+  const me = room.players.find((p) => p.id === room.youId)
+  const playing = Boolean(me?.playing)
+  const others = micro.players.filter((p) => p.id !== room.youId)
+  const ratedAll =
+    playing && others.length > 0 && others.every((p) => micro.yourVotes[p.id] != null)
+
   return (
     <section className="play">
-      <p className="eyebrow">Live-test · {micro.phase === 'play' ? 'Utför' : 'Betyg'}</p>
+      <p className="eyebrow">Live-test · {micro.phase === 'play' ? 'Utför' : 'Peer-betyg'}</p>
       <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={45000} />
       <h2 className="prompt">{micro.challenge}</h2>
-      {micro.phase === 'play' && !micro.isHost && (
+      {micro.phase === 'play' && playing && (
         <>
           {micro.challengeKind === 'write' && !micro.yourDone && (
             <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={80} rows={2} />
           )}
           {micro.yourDone ? (
-            <p className="locked">Klar — väntar på host.</p>
+            <p className="locked">Klar — väntar på övriga.</p>
           ) : (
             <button
               type="button"
@@ -517,34 +523,62 @@ function LiveView({ room }: { room: PublicRoom }) {
           )}
         </>
       )}
-      {micro.phase === 'play' && micro.isHost && (
-        <p className="muted">{micro.doneCount} klara — du betygsätter snart.</p>
+      {micro.phase === 'play' && !playing && (
+        <p className="muted">{micro.doneCount} klara — spelarna kör live.</p>
       )}
-      {micro.phase === 'score' && micro.isHost && (
+      {micro.phase === 'score' && playing && (
+        <>
+          {ratedAll ? (
+            <p className="locked">Betyg inne — väntar på övriga.</p>
+          ) : (
+            <div className="vote-list">
+              {others.map((p) => (
+                <div key={p.id} className="sms-card">
+                  <span>
+                    {p.name}
+                    {p.write ? ` — “${p.write}”` : p.done ? ' · klar' : ' · missade'}
+                  </span>
+                  <div className="star-row">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`chip ${micro.yourVotes[p.id] === s ? 'on' : ''}`}
+                        onClick={() => void liveScore(p.id, s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {micro.phase === 'score' && !playing && (
         <div className="vote-list">
           {micro.players.map((p) => (
             <div key={p.id} className="sms-card">
-              <span>{p.name}{p.write ? ` — “${p.write}”` : ''}</span>
-              <div className="star-row">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className={`chip ${p.score === s ? 'on' : ''}`}
-                    onClick={() => void liveScore(p.id, s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
+              <span>
+                {p.name}
+                {p.write ? ` — “${p.write}”` : ''}
+              </span>
             </div>
           ))}
+          <p className="muted">
+            Spelarna betygsätter varandra · {micro.votersDone}/{room.playingCount}
+          </p>
         </div>
       )}
-      {micro.phase === 'score' && !micro.isHost && <p className="muted">Host betygsätter…</p>}
       {micro.phase === 'play' && (
         <p className="muted ready-count">
           {micro.doneCount}/{room.playingCount} klara
+        </p>
+      )}
+      {micro.phase === 'score' && playing && (
+        <p className="muted ready-count">
+          {micro.votersDone}/{room.playingCount} har betygsatt
         </p>
       )}
     </section>

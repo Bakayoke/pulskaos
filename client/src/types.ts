@@ -113,16 +113,16 @@ export type PublicMicro =
       phase: LivePhase
       challenge: string
       challengeKind: 'physical' | 'write'
-      isHost: boolean
       yourDone: boolean
       yourWrite: string | null
       doneCount: number
+      yourVotes: Record<string, number>
+      votersDone: number
       players: {
         id: string
         name: string
         done: boolean
         write: string | null
-        score: number | null
       }[]
     }
 

@@ -8,6 +8,8 @@ import {
   enterLiveScore,
   enterSmsSabotage,
   enterSmsVote,
+  finalizeLiveScores,
+  liveVotingComplete,
   resolveArena,
   resolveBlitz,
   resolveEmoji,
@@ -84,6 +86,7 @@ export function hydrateRooms(list: Room[]) {
       if (typeof p.playing !== 'boolean') p.playing = !p.host
     }
     if (r.pulse && !r.pulse.lastGrades) r.pulse.lastGrades = {}
+    if (r.micro?.kind === 'live' && !r.micro.live.votes) r.micro.live.votes = {}
     rooms.set(r.code, r)
   }
 }
@@ -741,22 +744,33 @@ export function liveDone(code: string, playerId: string, write?: string) {
   const contestants = activePlayers(room)
   if (contestants.every((p) => live.done[p.id])) {
     enterLiveScore(room)
+    if (liveVotingComplete(room)) {
+      finalizeLiveScores(room)
+      resolveLive(room, dramaReveal(room))
+    }
     touch(room)
   }
   return { ok: true }
 }
 
-export function liveScore(code: string, hostId: string, targetId: string, stars: number) {
+export function liveScore(code: string, voterId: string, targetId: string, stars: number) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'live') return { error: 'Inget live-test' }
-  if (room.hostId !== hostId) return { error: 'Bara hosten' }
   const live = room.micro.live
   if (live.phase !== 'score') return { error: 'Fel fas' }
+  const voter = room.players.find((p) => p.id === voterId)
+  if (!voter?.playing) return { error: 'Du hostar bara' }
+  if (voterId === targetId) return { error: 'Kan inte betygsätta dig själv' }
+  const target = room.players.find((p) => p.id === targetId && p.playing)
+  if (!target) return { error: 'Ogiltig spelare' }
   const s = Math.min(5, Math.max(1, Math.round(stars)))
-  live.scores[targetId] = s
+  if (!live.votes[voterId]) live.votes[voterId] = {}
+  live.votes[voterId]![targetId] = s
   touch(room)
-  const contestants = room.players.filter((p) => p.playing)
-  if (contestants.every((p) => live.scores[p.id] != null)) resolveLive(room, dramaReveal(room))
+  if (liveVotingComplete(room)) {
+    finalizeLiveScores(room)
+    resolveLive(room, dramaReveal(room))
+  }
   return { ok: true }
 }
 
@@ -822,11 +836,13 @@ export function tickRooms(): string[] {
       } else if (m.kind === 'live' && now >= m.live.endsAt) {
         if (m.live.phase === 'play') {
           enterLiveScore(room)
+          if (liveVotingComplete(room)) {
+            finalizeLiveScores(room)
+            resolveLive(room, dramaReveal(room))
+          }
           dirty = true
         } else {
-          for (const p of room.players.filter((x) => x.playing)) {
-            if (m.live.scores[p.id] == null) m.live.scores[p.id] = m.live.done[p.id] ? 3 : 1
-          }
+          finalizeLiveScores(room)
           resolveLive(room, dramaReveal(room))
           dirty = true
         }

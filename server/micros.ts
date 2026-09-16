@@ -181,6 +181,7 @@ export function createMicro(
       kind: challenge.kind,
       done: {},
       writes: {},
+      votes: {},
       scores: {},
     },
   }
@@ -313,25 +314,27 @@ export function toPublicMicro(room: Room, viewerId?: string): PublicMicro | null
   }
 
   const live = m.live
+  const contestants = room.players.filter((p) => p.playing)
+  const votersDone = contestants.filter((v) =>
+    contestants.every((t) => v.id === t.id || live.votes[v.id]?.[t.id] != null),
+  ).length
   return {
     kind: 'live',
     endsAt: live.endsAt,
     phase: live.phase,
     challenge: live.challenge,
     challengeKind: live.kind,
-    isHost: viewerId === room.hostId,
     yourDone: viewerId ? Boolean(live.done[viewerId]) : false,
     yourWrite: viewerId ? live.writes[viewerId] ?? null : null,
     doneCount: Object.keys(live.done).length,
-    players: room.players
-      .filter((p) => p.playing)
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        done: Boolean(live.done[p.id]),
-        write: live.writes[p.id] ?? null,
-        score: live.scores[p.id] ?? null,
-      })),
+    yourVotes: viewerId ? { ...(live.votes[viewerId] ?? {}) } : {},
+    votersDone,
+    players: contestants.map((p) => ({
+      id: p.id,
+      name: p.name,
+      done: Boolean(live.done[p.id]),
+      write: live.writes[p.id] ?? null,
+    })),
   }
 }
 
@@ -525,9 +528,39 @@ export function resolveLabb(room: Room, reveal: RevealFn) {
   })
 }
 
+export function finalizeLiveScores(room: Room) {
+  if (room.micro?.kind !== 'live') return
+  const live = room.micro.live
+  const contestants = active(room)
+  for (const target of contestants) {
+    const ratings: number[] = []
+    for (const voter of contestants) {
+      if (voter.id === target.id) continue
+      const s = live.votes[voter.id]?.[target.id]
+      if (typeof s === 'number') ratings.push(s)
+    }
+    if (ratings.length) {
+      live.scores[target.id] = Math.round(ratings.reduce((a, b) => a + b, 0) / ratings.length)
+    } else {
+      live.scores[target.id] = live.done[target.id] ? 3 : 1
+    }
+  }
+}
+
+export function liveVotingComplete(room: Room) {
+  if (room.micro?.kind !== 'live') return false
+  const live = room.micro.live
+  const contestants = active(room)
+  if (contestants.length <= 1) return true
+  return contestants.every((voter) =>
+    contestants.every((target) => voter.id === target.id || live.votes[voter.id]?.[target.id] != null),
+  )
+}
+
 export function resolveLive(room: Room, reveal: RevealFn) {
   if (room.micro?.kind !== 'live') return
   const live = room.micro.live
+  if (Object.keys(live.scores).length === 0) finalizeLiveScores(room)
   const deltas: Record<string, number> = {}
   for (const p of room.players.filter((x) => x.playing)) {
     const stars = live.scores[p.id] ?? (live.done[p.id] ? 3 : 0)
@@ -586,6 +619,12 @@ export function enterLiveScore(room: Room) {
   const live = room.micro.live
   live.phase = 'score'
   live.endsAt = Date.now() + 40_000
+  live.votes = {}
+  live.scores = {}
+  // Solo: no peers to rate — auto-score from completion.
+  if (active(room).length <= 1) {
+    for (const p of active(room)) live.scores[p.id] = live.done[p.id] ? 5 : 1
+  }
 }
 
 export function clampStrokes(strokes: StrokePoint[][]): StrokePoint[][] {

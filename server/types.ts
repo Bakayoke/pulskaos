@@ -115,6 +115,9 @@ export type LiveState = {
   kind: 'physical' | 'write'
   done: Record<string, boolean>
   writes: Record<string, string>
+  /** voterId → targetId → stars (1–5). Peers rate each other; host never judges. */
+  votes: Record<string, Record<string, number>>
+  /** Final averaged stars per contestant (filled at resolve). */
   scores: Record<string, number>
 }
 
@@ -297,9 +300,10 @@ export type PublicMicro =
       phase: LivePhase
       challenge: string
       challengeKind: 'physical' | 'write'
-      isHost: boolean
       yourDone: boolean
       yourWrite: string | null
       doneCount: number
-      players: { id: string; name: string; done: boolean; write: string | null; score: number | null }[]
+      yourVotes: Record<string, number>
+      votersDone: number
+      players: { id: string; name: string; done: boolean; write: string | null }[]
     }
