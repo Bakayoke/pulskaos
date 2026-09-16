@@ -264,6 +264,27 @@ body.tv-mode .shell,
   box-shadow: 0 0 40px rgba(255, 59, 92, 0.45);
 }
 
+.room-banner.chaos {
+  background: rgba(255, 59, 92, 0.95);
+  color: #fff;
+  animation: bannerIn 0.35s ease both, chaosPulse 0.45s ease infinite alternate;
+}
+
+.room-banner.golden {
+  background: linear-gradient(135deg, #ffd646, #ff9a1f);
+  color: #1a1200;
+  box-shadow: 0 0 36px rgba(255, 214, 70, 0.45);
+}
+
+@keyframes chaosPulse {
+  from {
+    transform: translate(-50%, 0) scale(1);
+  }
+  to {
+    transform: translate(-50%, 0) scale(1.03);
+  }
+}
+
 @keyframes bannerIn {
   from {
     opacity: 0;
@@ -915,6 +936,55 @@ textarea {
   border-radius: 28%;
 }
 
+.note.golden {
+  background: radial-gradient(circle at 30% 30%, #fff8c8, #ffd646 45%, #ff9a1f);
+  box-shadow: 0 0 24px rgba(255, 214, 70, 0.75), 0 0 40px rgba(255, 154, 31, 0.35);
+  border-radius: 20%;
+  animation: goldenSpin 1.2s linear infinite;
+}
+
+@keyframes goldenSpin {
+  from {
+    filter: brightness(1);
+  }
+  to {
+    filter: brightness(1.25);
+  }
+}
+
+.lane-stage.chaos {
+  filter: hue-rotate(160deg) saturate(1.4);
+  box-shadow: inset 0 0 40px rgba(255, 59, 92, 0.25);
+}
+
+.pulse-play.chaos-mode {
+  animation: chaosShake 0.35s ease infinite alternate;
+}
+
+@keyframes chaosShake {
+  from {
+    transform: translateX(-1px);
+  }
+  to {
+    transform: translateX(1px);
+  }
+}
+
+.chaos-banner-inline {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ff6b8a;
+  animation: bannerIn 0.3s ease both;
+}
+
+.mult.golden {
+  color: #ffd646;
+  border-color: rgba(255, 214, 70, 0.4);
+}
+
 .note.perfect,
 .note.good,
 .note.miss {
@@ -1097,6 +1167,149 @@ textarea {
   color: var(--muted);
   display: grid;
   gap: 0.25rem;
+}
+
+.echo-reel {
+  position: relative;
+  min-height: 9.5rem;
+  border-radius: 18px;
+  border: 1px solid rgba(214, 255, 63, 0.18);
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 0%, rgba(255, 59, 92, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 100%, rgba(214, 255, 63, 0.1), transparent 50%),
+    rgba(14, 18, 25, 0.92);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 1.1rem 1.25rem 1.4rem;
+}
+
+.echo-slide {
+  width: 100%;
+  text-align: center;
+  animation: reelIn 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  display: grid;
+  gap: 0.45rem;
+  justify-items: center;
+}
+
+.echo-slide.crown .reel-body,
+.echo-slide.sab .reel-body {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.echo-slide.sms .reel-body {
+  font-size: 1.15rem;
+  line-height: 1.35;
+}
+
+.echo-slide.fail .reel-body {
+  color: var(--warn);
+  font-style: italic;
+}
+
+.reel-tag {
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.reel-body {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.reel-name {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.reel-doodle {
+  width: min(42vw, 140px);
+  height: min(42vw, 140px);
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+
+.reel-doodle path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.reel-dots {
+  position: absolute;
+  bottom: 0.55rem;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.reel-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.reel-dots span.on {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(214, 255, 63, 0.5);
+}
+
+@keyframes reelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rematch-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.rematch-meter {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(20, 26, 36, 0.7);
+  overflow: hidden;
+  padding: 0.65rem 0.85rem;
+}
+
+.rematch-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, rgba(255, 59, 92, 0.35), rgba(214, 255, 63, 0.35));
+  transition: width 0.1s linear;
+}
+
+.rematch-meter p {
+  position: relative;
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn.voted {
+  opacity: 0.75;
 }
 
 .winner h2 {

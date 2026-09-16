@@ -29,11 +29,12 @@ export type PulseNote = {
   lane: 0 | 1 | 2
   hitAt: number
   sync: boolean
+  golden?: boolean
 }
 
 export type RoomBanner = {
   text: string
-  kind: 'sync' | 'sabotage' | 'finale' | 'info' | 'drama'
+  kind: 'sync' | 'sabotage' | 'finale' | 'info' | 'drama' | 'chaos' | 'golden'
   until: number
 }
 
@@ -147,8 +148,11 @@ export type PublicRoom = {
     syncResults: Record<string, { hit: number; miss: number; resolved: boolean }>
     multiplier: number
     lastGrades: Record<string, PulseHitGrade>
+    goldenPerfect: Record<string, boolean>
+    chaosUntil: number | null
     yourHits: Record<string, PulseHitGrade>
     yourMultiplier: number
+    yourGolden: boolean
     crowd: {
       id: string
       name: string
@@ -181,4 +185,10 @@ export type PublicRoom = {
   playingCount: number
   banner: RoomBanner | null
   yourStreak: number
+  rematch: {
+    endsAt: number
+    voteCount: number
+    need: number
+    youVoted: boolean
+  } | null
 }

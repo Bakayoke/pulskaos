@@ -21,14 +21,23 @@ export function buildPulseChart(opts: {
 
   const notes: PulseNote[] = []
   let t = opts.startAt + beatMs * leadBeats
+
+  // One golden candidate slot mid-chart (warmup/bridge only)
+  const goldenSlot =
+    opts.kind === 'finale'
+      ? -1
+      : Math.floor(beatCount * 0.45) + Math.floor(Math.random() * Math.max(1, Math.floor(beatCount * 0.2)))
+
   for (let i = 0; i < beatCount; i++) {
     const sync = i > 0 && i % 4 === 0
-    const lane = (sync ? 1 : i % 3) as 0 | 1 | 2
+    const golden = !sync && i === goldenSlot
+    const lane = (sync ? 1 : golden ? 1 : i % 3) as 0 | 1 | 2
     notes.push({
       id: noteId(),
       lane,
       hitAt: Math.round(t),
       sync,
+      golden: golden || undefined,
     })
     t += beatMs
   }
@@ -45,6 +54,8 @@ export function buildPulseChart(opts: {
     syncResults: {},
     multiplier: 1,
     lastGrades: {},
+    goldenPerfect: {},
+    chaosUntil: null,
   }
 }
 
@@ -62,9 +73,10 @@ export function gradeHit(deltaMs: number): PulseHitGrade {
 export function multiplierFromHits(
   hits: Record<string, PulseHitGrade>,
   noteCount: number,
+  goldenBoost = false,
 ): number {
   const values = Object.values(hits)
-  if (!values.length) return 1
+  if (!values.length) return goldenBoost ? 2 : 1
   let score = 0
   for (const g of values) {
     if (g === 'perfect') score += 1
@@ -72,13 +84,15 @@ export function multiplierFromHits(
     else if (g === 'almost') score += 0.25
   }
   const ratio = score / Math.max(1, noteCount)
-  if (ratio >= 0.85) return 2
-  if (ratio >= 0.65) return 1.5
-  if (ratio >= 0.4) return 1.25
-  return 1
+  let mult = 1
+  if (ratio >= 0.85) mult = 2
+  else if (ratio >= 0.65) mult = 1.5
+  else if (ratio >= 0.4) mult = 1.25
+  if (goldenBoost) mult *= 2
+  return mult
 }
 
-export function pulsePoints(grade: PulseHitGrade, streak: number): number {
+export function pulsePoints(grade: PulseHitGrade, streak: number, golden = false): number {
   const base =
     grade === 'perfect'
       ? 120
@@ -89,7 +103,8 @@ export function pulsePoints(grade: PulseHitGrade, streak: number): number {
           : 0
   if (!base) return 0
   const streakMult = 1 + Math.min(4, Math.max(0, streak - 1)) * 0.12
-  return Math.round(base * streakMult)
+  const goldMult = golden && grade === 'perfect' ? 2.5 : 1
+  return Math.round(base * streakMult * goldMult)
 }
 
 export function isHitGrade(grade: PulseHitGrade): boolean {

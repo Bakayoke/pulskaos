@@ -31,6 +31,8 @@ export type PulseNote = {
   lane: 0 | 1 | 2
   hitAt: number
   sync: boolean
+  /** Rare golden note — Perfect doubles next-micro multiplier */
+  golden?: boolean
 }
 
 export type PulseHitGrade = 'perfect' | 'good' | 'almost' | 'early' | 'late' | 'miss'
@@ -46,6 +48,10 @@ export type PulseState = {
   multiplier: number
   /** Latest grade per player for TV crowd board */
   lastGrades: Record<string, PulseHitGrade>
+  /** Players who Perfect'd a golden note this pulse */
+  goldenPerfect: Record<string, boolean>
+  /** Sync-miss chaos: inverted lanes until this timestamp */
+  chaosUntil: number | null
 }
 
 export type BlitzState = {
@@ -129,6 +135,11 @@ export type EchoBag = {
   emojiFails: string[]
 }
 
+export type RematchState = {
+  endsAt: number
+  votes: Record<string, boolean>
+}
+
 export type MicroState =
   | { kind: 'blitz'; blitz: BlitzState }
   | { kind: 'sms'; sms: SmsState }
@@ -161,6 +172,7 @@ export type Room = {
   language: 'sv' | 'en'
   lastMults: Record<string, number>
   banner: RoomBanner | null
+  rematch: RematchState | null
 }
 
 export type RevealPayload = {
@@ -173,7 +185,7 @@ export type RevealPayload = {
 
 export type RoomBanner = {
   text: string
-  kind: 'sync' | 'sabotage' | 'finale' | 'info' | 'drama'
+  kind: 'sync' | 'sabotage' | 'finale' | 'info' | 'drama' | 'chaos' | 'golden'
   until: number
 }
 
@@ -222,6 +234,12 @@ export type PublicRoom = {
   playingCount: number
   banner: RoomBanner | null
   yourStreak: number
+  rematch: {
+    endsAt: number
+    voteCount: number
+    need: number
+    youVoted: boolean
+  } | null
 }
 
 export type PublicMicro =

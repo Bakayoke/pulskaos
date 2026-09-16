@@ -32,6 +32,25 @@ import type { PublicRoom, PulseHitGrade } from './types'
 
 type Screen = 'home' | 'create' | 'join' | 'play'
 
+function useCountdown(endsAt: number | null | undefined, serverNow: number) {
+  const [left, setLeft] = useState(0)
+  const skew = useRef(0)
+  useEffect(() => {
+    skew.current = serverNow - Date.now()
+  }, [serverNow])
+  useEffect(() => {
+    if (!endsAt) {
+      setLeft(0)
+      return
+    }
+    const tick = () => setLeft(Math.max(0, (endsAt - (Date.now() + skew.current)) / 1000))
+    tick()
+    const id = window.setInterval(tick, 100)
+    return () => window.clearInterval(id)
+  }, [endsAt])
+  return left
+}
+
 function qrUrl(data: string, size = 220) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=10&data=${encodeURIComponent(data)}`
 }
@@ -447,8 +466,8 @@ function PlayView({
 
 function Banner({ banner }: { banner: NonNullable<PublicRoom['banner']> }) {
   useEffect(() => {
-    if (banner.kind === 'sabotage' || banner.kind === 'drama') dramaSting()
-    if (banner.kind === 'finale' || banner.kind === 'sync') syncBoom()
+    if (banner.kind === 'sabotage' || banner.kind === 'drama' || banner.kind === 'chaos') dramaSting()
+    if (banner.kind === 'finale' || banner.kind === 'sync' || banner.kind === 'golden') syncBoom()
   }, [banner.kind, banner.text])
   return <div className={`room-banner ${banner.kind}`}>{banner.text}</div>
 }
@@ -651,8 +670,10 @@ function PulseView({
 
   const onHit = useEffectEvent(async (lane: 0 | 1 | 2) => {
     if (displayOnly || tutorialActive) return
+    const chaos = Boolean(pulse.chaosUntil && now < pulse.chaosUntil)
+    const mapped = (chaos ? ((2 - lane) as 0 | 1 | 2) : lane)
     const upcoming = pulse.notes
-      .filter((n) => n.lane === lane && !pulse.yourHits[n.id])
+      .filter((n) => n.lane === mapped && !pulse.yourHits[n.id])
       .sort((a, b) => Math.abs(a.hitAt - now) - Math.abs(b.hitAt - now))[0]
     if (!upcoming) {
       playGrade('miss')
@@ -666,13 +687,14 @@ function PulseView({
       setPointsPop(null)
       return
     }
-    const res = await pulseHit(upcoming.id, lane)
+    const res = await pulseHit(upcoming.id, mapped)
     const grade = (res.grade as PulseHitGrade) || 'miss'
     const streak = res.streak ?? room.yourStreak
     setFlash(grade)
     setPointsPop(res.points && res.points > 0 ? res.points : null)
     playGrade(grade, streak)
     if (upcoming.sync && (grade === 'perfect' || grade === 'good' || grade === 'almost')) syncBoom()
+    if (upcoming.golden && grade === 'perfect') syncBoom()
   })
 
   useEffect(() => {
@@ -689,6 +711,7 @@ function PulseView({
   const travel = 1400
   const kindLabel =
     pulse.kind === 'warmup' ? 'Warmup' : pulse.kind === 'finale' ? 'Pulse-Off' : 'Bridge'
+  const chaosActive = Boolean(pulse.chaosUntil && now < pulse.chaosUntil)
   const gradeLabel =
     flash === 'perfect'
       ? 'PERFECT'
@@ -705,19 +728,23 @@ function PulseView({
                 : ''
 
   return (
-    <section className="play pulse-play">
+    <section className={`play pulse-play${chaosActive ? ' chaos-mode' : ''}`}>
       <div className="pulse-header">
         <div>
-          <p className="eyebrow">{kindLabel}{displayOnly ? ' · TV' : ''}</p>
+          <p className="eyebrow">
+            {kindLabel}
+            {displayOnly ? ' · TV' : ''}
+            {chaosActive ? ' · KAOS' : ''}
+          </p>
           <h2>
             {pulse.bpm} <span className="unit">BPM</span>
           </h2>
         </div>
         {!displayOnly && (
           <div className="mult-stack">
-            <div className="mult">
+            <div className={`mult${pulse.yourGolden ? ' golden' : ''}`}>
               ×{pulse.yourMultiplier.toFixed(2)}
-              <span>mult</span>
+              <span>{pulse.yourGolden ? 'golden' : 'mult'}</span>
             </div>
             <div className="streak-meter">
               Streak <strong>{room.yourStreak}</strong>
@@ -743,6 +770,10 @@ function PulseView({
         </div>
       )}
 
+      {chaosActive && (
+        <p className="chaos-banner-inline">LANES INVERTERADE — A↔D</p>
+      )}
+
       {displayOnly && <p className="tv-wait">Spelarna träffar pulsen på sina telefoner</p>}
 
       {displayOnly && pulse.crowd.length > 0 && (
@@ -757,7 +788,9 @@ function PulseView({
         </div>
       )}
 
-      <div className={`lane-stage ${flash ? `flash-${flash}` : ''} ${displayOnly ? 'tv-lanes' : ''}`}>
+      <div
+        className={`lane-stage ${flash ? `flash-${flash}` : ''} ${displayOnly ? 'tv-lanes' : ''} ${chaosActive ? 'chaos' : ''}`}
+      >
         <div className="hit-line" />
         {[0, 1, 2].map((lane) => (
           <div key={lane} className="lane">
@@ -770,7 +803,7 @@ function PulseView({
                 return (
                   <div
                     key={n.id}
-                    className={`note ${n.sync ? 'sync' : ''} ${hit ?? ''}`}
+                    className={`note ${n.sync ? 'sync' : ''} ${n.golden ? 'golden' : ''} ${hit ?? ''}`}
                     style={{ top: `${50 - y * 0.45}%` }}
                   />
                 )
@@ -868,9 +901,11 @@ function RevealView({ room }: { room: PublicRoom }) {
 function WinnerView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }) {
   const ranked = [...room.players].filter((p) => p.playing).sort((a, b) => b.score - a.score)
   const winner = ranked[0]
-  const isHost = room.youId === room.hostId
   const you = room.players.find((p) => p.id === room.youId)
+  const playing = Boolean(you?.playing)
   const recorded = useRef(false)
+  const rematch = room.rematch
+  const rematchLeft = useCountdown(rematch?.endsAt, room.serverNow)
 
   useEffect(() => {
     if (!winner || !you || recorded.current) return
@@ -902,21 +937,7 @@ function WinnerView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }
         Husrekord {rec.w}–{rec.l}
       </p>
 
-      {room.echo.bestSms && (
-        <blockquote className="echo-card">
-          <span>Echo · bästa kuppen</span>
-          <p>“{room.echo.bestSms.text}”</p>
-          <cite>— {room.echo.bestSms.authorName}</cite>
-        </blockquote>
-      )}
-
-      {room.echo.highlights.length > 0 && (
-        <ul className="echo-list">
-          {room.echo.highlights.slice(-5).map((h) => (
-            <li key={h}>{h}</li>
-          ))}
-        </ul>
-      )}
+      <EchoReel room={room} winnerName={winner?.name ?? null} />
 
       {room.saboteurId && (
         <p className="pill danger inline">
@@ -935,24 +956,173 @@ function WinnerView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }
         ))}
       </ol>
 
-      <div className="actions">
-        {isHost && (
+      <div className="actions rematch-actions">
+        {rematch && (
+          <div className="rematch-meter">
+            <div
+              className="rematch-bar"
+              style={{
+                width: `${Math.max(0, Math.min(100, (rematchLeft / 12) * 100))}%`,
+              }}
+            />
+            <p>
+              Rematch Heat {Math.min(5, room.heat + 1)} · {rematch.voteCount}/{rematch.need} redo
+              {rematchLeft > 0 ? ` · ${Math.ceil(rematchLeft)}s` : ''}
+            </p>
+          </div>
+        )}
+        {playing && (
           <button
             type="button"
-            className="btn primary pulse-btn"
+            className={`btn primary pulse-btn${rematch?.youVoted ? ' voted' : ''}`}
+            disabled={Boolean(rematch?.youVoted)}
             onClick={() => {
               uiClick()
               void rematchGame()
             }}
           >
-            Rematch · Heat {Math.min(5, room.heat + 1)} — direkt!
+            {rematch?.youVoted
+              ? 'Du är redo!'
+              : rematch
+                ? `IGEN! · Heat ${Math.min(5, room.heat + 1)}`
+                : `Starta omröstning · Heat ${Math.min(5, room.heat + 1)}`}
           </button>
         )}
-        {!isHost && <p className="muted">Host startar rematch…</p>}
+        {!playing && (
+          <p className="muted tv-wait">
+            {rematch
+              ? 'Spelarna trycker IGEN på telefonerna'
+              : 'Väntar på att någon startar omröstning…'}
+          </p>
+        )}
         <button type="button" className="btn ghost" onClick={onLeave}>
           Avsluta
         </button>
       </div>
     </section>
+  )
+}
+
+type ReelSlide = {
+  key: string
+  kind: 'crown' | 'sms' | 'beat' | 'fail' | 'doodle' | 'sab'
+  title: string
+  body?: string
+  name?: string
+  strokes?: { x: number; y: number }[][]
+}
+
+function buildEchoSlides(room: PublicRoom, winnerName: string | null): ReelSlide[] {
+  const slides: ReelSlide[] = []
+  if (winnerName) {
+    slides.push({
+      key: 'crown',
+      kind: 'crown',
+      title: 'Nattens kung',
+      body: winnerName,
+    })
+  }
+  if (room.echo.bestSms) {
+    slides.push({
+      key: 'sms',
+      kind: 'sms',
+      title: 'Bästa kuppen',
+      body: `“${room.echo.bestSms.text}”`,
+      name: room.echo.bestSms.authorName,
+    })
+  }
+  for (const [i, h] of room.echo.highlights.slice(-5).entries()) {
+    if (winnerName && h.includes(winnerName) && h.includes('vann')) continue
+    slides.push({ key: `h-${i}`, kind: 'beat', title: 'Echo', body: h })
+  }
+  for (const [i, f] of [...room.echo.emojiFails, ...room.echo.wrongGuesses]
+    .slice(-3)
+    .entries()) {
+    slides.push({
+      key: `f-${i}`,
+      kind: 'fail',
+      title: 'Klassisk miss',
+      body: f,
+    })
+  }
+  const avatars = Object.entries(room.echo.avatars).slice(0, 3)
+  for (const [id, strokes] of avatars) {
+    const name = room.players.find((p) => p.id === id)?.name ?? '???'
+    slides.push({
+      key: `a-${id}`,
+      kind: 'doodle',
+      title: 'Klotter-avatar',
+      name,
+      strokes,
+    })
+  }
+  if (room.saboteurId) {
+    const sab = room.players.find((p) => p.id === room.saboteurId)
+    if (sab) {
+      slides.push({
+        key: 'sab',
+        kind: 'sab',
+        title: 'Sabotören avslöjad',
+        body: sab.name,
+      })
+    }
+  }
+  return slides.length ? slides : [{ key: 'empty', kind: 'beat', title: 'Echo', body: 'En natt utan spår…' }]
+}
+
+function MiniDoodle({ strokes }: { strokes: { x: number; y: number }[][] }) {
+  const paths = strokes
+    .map((stroke) => {
+      if (!stroke.length) return ''
+      return stroke
+        .map((p, i) => `${i === 0 ? 'M' : 'L'}${(p.x * 100).toFixed(1)} ${(p.y * 100).toFixed(1)}`)
+        .join(' ')
+    })
+    .filter(Boolean)
+  return (
+    <svg className="reel-doodle" viewBox="0 0 100 100" aria-hidden>
+      {paths.map((d) => (
+        <path key={d.slice(0, 24)} d={d} />
+      ))}
+    </svg>
+  )
+}
+
+function EchoReel({ room, winnerName }: { room: PublicRoom; winnerName: string | null }) {
+  const slides = buildEchoSlides(room, winnerName)
+  const [idx, setIdx] = useState(0)
+
+  useEffect(() => {
+    if (slides.length <= 1) return
+    const id = window.setInterval(() => setIdx((i) => (i + 1) % slides.length), 1600)
+    return () => window.clearInterval(id)
+  }, [slides.length])
+
+  const slide = slides[idx] ?? slides[0]!
+
+  return (
+    <div className="echo-reel" aria-live="polite">
+      <div className={`echo-slide ${slide.kind}`} key={slide.key}>
+        <span className="reel-tag">{slide.title}</span>
+        {slide.kind === 'doodle' && slide.strokes ? (
+          <>
+            <MiniDoodle strokes={slide.strokes} />
+            <strong className="reel-name">{slide.name}</strong>
+          </>
+        ) : (
+          <>
+            <p className="reel-body">{slide.body}</p>
+            {slide.name && <cite className="reel-name">— {slide.name}</cite>}
+          </>
+        )}
+      </div>
+      {slides.length > 1 && (
+        <div className="reel-dots">
+          {slides.map((s, i) => (
+            <span key={s.key} className={i === idx ? 'on' : ''} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

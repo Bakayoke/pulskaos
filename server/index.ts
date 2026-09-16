@@ -19,7 +19,7 @@ import {
   joinRoom,
   pruneIdleRooms,
   reconnectSocket,
-  rematch,
+  voteRematch,
   setLanguage,
   setHostPlaying,
   setPersistHook,
@@ -174,7 +174,16 @@ io.on('connection', (socket) => {
   socket.on('rematch', (_data, ack) => {
     const binding = getBinding(socket.id)
     if (!binding) return ack?.({ error: 'Inte ansluten' })
-    const result = rematch(binding.code, binding.playerId)
+    const result = voteRematch(binding.code, binding.playerId)
+    if ('error' in result) return ack?.({ error: result.error })
+    ack?.({ ok: true })
+    broadcastRoom(binding.code)
+  })
+
+  socket.on('voteRematch', (_data, ack) => {
+    const binding = getBinding(socket.id)
+    if (!binding) return ack?.({ error: 'Inte ansluten' })
+    const result = voteRematch(binding.code, binding.playerId)
     if ('error' in result) return ack?.({ error: result.error })
     ack?.({ ok: true })
     broadcastRoom(binding.code)

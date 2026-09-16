@@ -82,10 +82,15 @@ export function hydrateRooms(list: Room[]) {
     if (!r.echo.emojiFails) r.echo.emojiFails = []
     if (!r.lastMults) r.lastMults = {}
     if (!r.banner) r.banner = null
+    if (!r.rematch) r.rematch = null
     for (const p of r.players) {
       if (typeof p.playing !== 'boolean') p.playing = !p.host
     }
-    if (r.pulse && !r.pulse.lastGrades) r.pulse.lastGrades = {}
+    if (r.pulse) {
+      if (!r.pulse.lastGrades) r.pulse.lastGrades = {}
+      if (!r.pulse.goldenPerfect) r.pulse.goldenPerfect = {}
+      if (r.pulse.chaosUntil === undefined) r.pulse.chaosUntil = null
+    }
     if (r.micro?.kind === 'live' && !r.micro.live.votes) r.micro.live.votes = {}
     rooms.set(r.code, r)
   }
@@ -185,6 +190,7 @@ export function createRoom(
     language,
     lastMults: {},
     banner: null,
+    rematch: null,
   }
 
   rooms.set(code, room)
@@ -335,46 +341,9 @@ export function startGame(code: string, playerId: string) {
   room.lastReveal = null
   room.revealUntil = null
   room.lastMults = {}
+  room.rematch = null
   pickSaboteur(room)
   beginPulse(room, room.heat >= 5 ? 'finale' : 'warmup')
-  touch(room)
-  return { room }
-}
-
-export function rematch(code: string, playerId: string) {
-  const room = getRoom(code)
-  if (!room) return { error: 'Rummet finns inte' }
-  if (room.hostId !== playerId) return { error: 'Bara hosten' }
-  if (room.status !== 'finished') return { error: 'Inte klart än' }
-
-  room.heat = Math.min(5, room.heat + 1)
-  room.night += 1
-  room.pulse = null
-  room.micro = null
-  room.round = 0
-  room.currentMicro = null
-  room.lastReveal = null
-  room.revealUntil = null
-  room.saboteurId = null
-  room.saboteurCharges = 0
-  room.echo = {
-    ...emptyEcho(),
-    highlights: room.echo.highlights.slice(-6),
-    bestSms: room.echo.bestSms,
-    avatars: room.echo.avatars,
-  }
-  for (const p of room.players) {
-    p.score = 0
-    p.streak = 0
-    if (!p.host) p.playing = true
-  }
-  room.lastMults = {}
-  room.schedule = buildSchedule(room.heat)
-  room.totalRounds = room.schedule.length
-  pickSaboteur(room)
-  setBanner(room, `Heat ${room.heat} — kör!`, 'info', 2200)
-  beginPulse(room, room.heat >= 5 ? 'finale' : 'warmup')
-  if (room.heat >= 5) setBanner(room, 'HEAT 5 — RENT PULSE-OFF', 'finale', 3500)
   touch(room)
   return { room }
 }
@@ -397,14 +366,22 @@ function captureMults(room: Room) {
   if (!room.pulse) return
   const next: Record<string, number> = {}
   for (const p of living(room)) {
-    next[p.id] = multiplierFromHits(room.pulse.hits[p.id] ?? {}, room.pulse.notes.length)
+    next[p.id] = multiplierFromHits(
+      room.pulse.hits[p.id] ?? {},
+      room.pulse.notes.length,
+      Boolean(room.pulse.goldenPerfect[p.id]),
+    )
   }
   room.lastMults = next
 }
 
 function playerPulseMult(room: Room, playerId: string): number {
   if (!room.pulse) return 1
-  return multiplierFromHits(room.pulse.hits[playerId] ?? {}, room.pulse.notes.length)
+  return multiplierFromHits(
+    room.pulse.hits[playerId] ?? {},
+    room.pulse.notes.length,
+    Boolean(room.pulse.goldenPerfect[playerId]),
+  )
 }
 
 function finishNight(room: Room) {
@@ -424,6 +401,69 @@ function finishNight(room: Room) {
       room.echo.highlights.push(`Sabotören ${sab.name} smet iväg med segern`)
     }
   }
+  // 12s rematch window — majority of playing players starts Heat+1
+  room.rematch = { endsAt: Date.now() + 12_000, votes: {} }
+}
+
+function rematchNeed(room: Room) {
+  const n = activePlayers(room).length
+  return Math.max(1, Math.ceil(n / 2))
+}
+
+function startRematchNight(room: Room) {
+  room.heat = Math.min(5, room.heat + 1)
+  room.night += 1
+  room.pulse = null
+  room.micro = null
+  room.round = 0
+  room.currentMicro = null
+  room.lastReveal = null
+  room.revealUntil = null
+  room.saboteurId = null
+  room.saboteurCharges = 0
+  room.rematch = null
+  room.echo = {
+    ...emptyEcho(),
+    highlights: room.echo.highlights.slice(-6),
+    bestSms: room.echo.bestSms,
+    avatars: room.echo.avatars,
+  }
+  for (const p of room.players) {
+    p.score = 0
+    p.streak = 0
+    if (!p.host) p.playing = true
+  }
+  room.lastMults = {}
+  room.schedule = buildSchedule(room.heat)
+  room.totalRounds = room.schedule.length
+  pickSaboteur(room)
+  setBanner(room, `Heat ${room.heat} — kör!`, 'info', 2200)
+  beginPulse(room, room.heat >= 5 ? 'finale' : 'warmup')
+  if (room.heat >= 5) setBanner(room, 'HEAT 5 — RENT PULSE-OFF', 'finale', 3500)
+}
+
+export function rematch(code: string, playerId: string) {
+  // Legacy host button → same as voting yes
+  return voteRematch(code, playerId)
+}
+
+export function voteRematch(code: string, playerId: string) {
+  const room = getRoom(code)
+  if (!room) return { error: 'Rummet finns inte' }
+  if (room.status !== 'finished') return { error: 'Inte klart än' }
+  if (!room.rematch) room.rematch = { endsAt: Date.now() + 12_000, votes: {} }
+
+  const player = room.players.find((p) => p.id === playerId)
+  if (!player?.playing) return { error: 'Bara spelare röstar — TV tittar' }
+  room.rematch.votes[playerId] = true
+  touch(room)
+
+  const votes = Object.keys(room.rematch.votes).length
+  if (votes >= rematchNeed(room)) {
+    startRematchNight(room)
+    touch(room)
+  }
+  return { room }
 }
 
 function advanceAfterPulse(room: Room) {
@@ -501,8 +541,14 @@ export function submitPulseHit(code: string, playerId: string, noteId: string, l
     player.streak = 0
   } else {
     player.streak += 1
-    points = pulsePoints(grade, player.streak)
+    const goldenHit = Boolean(note.golden && grade === 'perfect')
+    points = pulsePoints(grade, player.streak, goldenHit)
     player.score += points
+    if (goldenHit) {
+      room.pulse.goldenPerfect[playerId] = true
+      setBanner(room, `${player.name} · GOLDEN ×2 nästa mikro!`, 'golden', 2800)
+      room.echo.highlights.push(`Golden Pulse: ${player.name}`)
+    }
   }
 
   if (note.sync) {
@@ -518,7 +564,8 @@ export function submitPulseHit(code: string, playerId: string, noteId: string, l
         setBanner(room, 'SYNC HIT — alla i fas!', 'sync', 2500)
       } else {
         room.echo.highlights.push('Sync Miss — kaos!')
-        setBanner(room, 'SYNC MISS — kaos!', 'drama', 2500)
+        room.pulse.chaosUntil = Date.now() + 4500
+        setBanner(room, 'SYNC MISS — LANES INVERTERADE!', 'chaos', 3200)
       }
     }
     room.pulse.syncResults[note.id] = syn
@@ -859,6 +906,16 @@ export function tickRooms(): string[] {
       dirty = true
     }
 
+    if (room.status === 'finished' && room.rematch && now >= room.rematch.endsAt) {
+      const votes = Object.keys(room.rematch.votes).length
+      if (votes >= rematchNeed(room)) {
+        startRematchNight(room)
+      } else {
+        room.rematch = null
+      }
+      dirty = true
+    }
+
     if (dirty) {
       touch(room)
       changed.push(room.code)
@@ -880,8 +937,11 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
         syncResults: room.pulse.syncResults,
         multiplier: room.pulse.multiplier,
         lastGrades: room.pulse.lastGrades,
+        goldenPerfect: room.pulse.goldenPerfect,
+        chaosUntil: room.pulse.chaosUntil,
         yourHits: viewerId ? room.pulse.hits[viewerId] ?? {} : {},
         yourMultiplier: viewerId ? playerPulseMult(room, viewerId) : room.pulse.multiplier,
+        yourGolden: viewerId ? Boolean(room.pulse.goldenPerfect[viewerId]) : false,
         crowd: room.players
           .filter((p) => p.playing)
           .map((p) => ({
@@ -897,6 +957,17 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
 
   const banner =
     room.banner && room.banner.until > Date.now() ? room.banner : null
+
+  const rematchNeedN = rematchNeed(room)
+  const rematch =
+    room.status === 'finished' && room.rematch
+      ? {
+          endsAt: room.rematch.endsAt,
+          voteCount: Object.keys(room.rematch.votes).length,
+          need: rematchNeedN,
+          youVoted: viewerId ? Boolean(room.rematch.votes[viewerId]) : false,
+        }
+      : null
 
   return {
     code: room.code,
@@ -931,5 +1002,6 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
     playingCount: room.players.filter((p) => p.playing && p.connected).length,
     banner,
     yourStreak: you?.streak ?? 0,
+    rematch,
   }
 }
