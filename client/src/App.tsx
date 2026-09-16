@@ -36,6 +36,38 @@ function qrUrl(data: string, size = 220) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=10&data=${encodeURIComponent(data)}`
 }
 
+function isFullscreenActive() {
+  const doc = document as Document & { webkitFullscreenElement?: Element | null }
+  return Boolean(document.fullscreenElement || doc.webkitFullscreenElement)
+}
+
+async function enterFullscreen() {
+  const el = document.documentElement as HTMLElement & {
+    webkitRequestFullscreen?: () => Promise<void> | void
+  }
+  try {
+    if (el.requestFullscreen) await el.requestFullscreen()
+    else el.webkitRequestFullscreen?.()
+  } catch {
+    /* CSS tv-mode still applies */
+  }
+}
+
+async function exitFullscreen() {
+  const doc = document as Document & {
+    webkitExitFullscreen?: () => Promise<void> | void
+    webkitFullscreenElement?: Element | null
+  }
+  try {
+    if (document.fullscreenElement || doc.webkitFullscreenElement) {
+      if (document.exitFullscreen) await document.exitFullscreen()
+      else doc.webkitExitFullscreen?.()
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [room, setRoom] = useState<PublicRoom | null>(null)
@@ -47,6 +79,8 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [tvMode, setTvMode] = useState(false)
   const [startAsTv, setStartAsTv] = useState(true)
+  const [fsActive, setFsActive] = useState(() => isFullscreenActive())
+  const hadFs = useRef(false)
 
   useEffect(() => {
     getSocket()
@@ -66,15 +100,61 @@ export default function App() {
     if (room) setScreen('play')
   }, [room])
 
+  useEffect(() => {
+    document.body.classList.toggle('tv-mode', tvMode && screen === 'play')
+    return () => document.body.classList.remove('tv-mode')
+  }, [tvMode, screen])
+
+  useEffect(() => {
+    const onFs = () => setFsActive(isFullscreenActive())
+    document.addEventListener('fullscreenchange', onFs)
+    document.addEventListener('webkitfullscreenchange', onFs as EventListener)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs)
+      document.removeEventListener('webkitfullscreenchange', onFs as EventListener)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (fsActive) hadFs.current = true
+    if (!fsActive && hadFs.current && tvMode) {
+      hadFs.current = false
+      setTvMode(false)
+    }
+  }, [fsActive, tvMode])
+
+  async function enableTvMode() {
+    // Must run in a user gesture for browser fullscreen
+    await enterFullscreen()
+    setFsActive(isFullscreenActive())
+    setTvMode(true)
+  }
+
+  async function disableTvMode() {
+    setTvMode(false)
+    hadFs.current = false
+    await exitFullscreen()
+    setFsActive(false)
+  }
+
+  async function toggleTvMode() {
+    if (tvMode) await disableTvMode()
+    else await enableTvMode()
+  }
+
   async function onCreate() {
     setBusy(true)
     setError('')
     try {
       uiClick()
-      // Default: host does not play (TV). Optional play-along via chip.
+      // Fullscreen must start in the same gesture as the click (before await network).
+      if (startAsTv) {
+        await enterFullscreen()
+        setFsActive(isFullscreenActive())
+      }
       await createGame(name || 'Host', lang, !startAsTv)
-      setTvMode(startAsTv)
       setScreen('play')
+      setTvMode(startAsTv)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Fel')
     } finally {
@@ -97,7 +177,7 @@ export default function App() {
   }
 
   return (
-    <div className={`app${tvMode && screen === 'play' ? ' tv-mode' : ''}`}>
+    <div className={`app${tvMode && screen === 'play' ? ' tv-mode' : ''}${fsActive ? ' is-fullscreen' : ''}`}>
       <div className="pulse-bg" aria-hidden>
         <div className="pulse-ring r1" />
         <div className="pulse-ring r2" />
@@ -122,14 +202,19 @@ export default function App() {
             <button
               type="button"
               className={`icon-btn ${tvMode ? 'on' : ''}`}
-              onClick={() => setTvMode((v) => !v)}
+              onClick={() => void toggleTvMode()}
             >
               {tvMode ? 'TV av' : 'TV-läge'}
             </button>
           )}
+          {tvMode && !fsActive && (
+            <button type="button" className="icon-btn on" onClick={() => void enterFullscreen().then(() => setFsActive(isFullscreenActive()))}>
+              Fullskärm
+            </button>
+          )}
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn hide-on-tv"
             aria-label="Mute"
             onClick={() => {
               const next = !mute
@@ -225,11 +310,14 @@ export default function App() {
           <PlayView
             room={room}
             tvMode={tvMode}
-            setTvMode={setTvMode}
+            setTvMode={(on) => {
+              if (on) void enableTvMode()
+              else void disableTvMode()
+            }}
             onLeave={() => {
+              void disableTvMode()
               clearSession()
               setRoom(null)
-              setTvMode(false)
               setScreen('home')
             }}
           />

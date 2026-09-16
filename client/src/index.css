@@ -155,8 +155,28 @@ button {
   margin: 0.25rem 0 0.75rem;
 }
 
-.tv-mode .shell {
-  max-width: 920px;
+body.tv-mode {
+  overflow: auto;
+}
+
+body.tv-mode .app,
+.app.tv-mode {
+  max-width: none;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body.tv-mode .shell,
+.app.tv-mode .shell,
+.app.is-fullscreen .shell {
+  max-width: none;
+  width: min(100%, 1100px);
+  padding: 0.75rem 2rem 2.5rem;
+}
+
+.app.is-fullscreen {
+  padding: 0;
 }
 
 .tv-mode .code-block strong {
