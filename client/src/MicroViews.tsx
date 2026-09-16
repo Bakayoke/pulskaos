@@ -1,0 +1,449 @@
+import { useEffect, useRef, useState } from 'react'
+import {
+  arenaPunch,
+  blitzAnswer,
+  emojiGuess,
+  emojiSubmit,
+  klotterSubmit,
+  klotterVote,
+  labbTap,
+  liveDone,
+  liveScore,
+  smsDraft,
+  smsSabotage,
+  smsVote,
+} from './api'
+import { uiClick } from './sfx'
+import type { PublicRoom, StrokePoint } from './types'
+
+function useCountdown(endsAt: number | null | undefined, serverNow: number) {
+  const [left, setLeft] = useState(0)
+  const skew = useRef(0)
+  useEffect(() => {
+    skew.current = serverNow - Date.now()
+  }, [serverNow])
+  useEffect(() => {
+    if (!endsAt) return
+    const tick = () => setLeft(Math.max(0, endsAt - (Date.now() + skew.current)))
+    tick()
+    const id = setInterval(tick, 50)
+    return () => clearInterval(id)
+  }, [endsAt])
+  return left
+}
+
+function Timer({ endsAt, serverNow, total }: { endsAt: number; serverNow: number; total: number }) {
+  const left = useCountdown(endsAt, serverNow)
+  return (
+    <div className="timer-bar">
+      <div style={{ width: `${Math.min(100, (left / total) * 100)}%` }} />
+    </div>
+  )
+}
+
+function MiniDoodle({ strokes, shake }: { strokes: StrokePoint[][]; shake?: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const c = ref.current
+    if (!c) return
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    const w = c.width
+    const h = c.height
+    ctx.clearRect(0, 0, w, h)
+    ctx.strokeStyle = '#d6ff3f'
+    ctx.lineWidth = 3
+    ctx.lineCap = 'round'
+    for (const stroke of strokes) {
+      if (stroke.length < 2) continue
+      ctx.beginPath()
+      ctx.moveTo(stroke[0]!.x * w, stroke[0]!.y * h)
+      for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i]!.x * w, stroke[i]!.y * h)
+      ctx.stroke()
+    }
+  }, [strokes])
+  return <canvas ref={ref} width={120} height={120} className={`mini-doodle ${shake ? 'shake' : ''}`} />
+}
+
+function DrawPad({
+  onSubmit,
+  orbActive,
+}: {
+  onSubmit: (strokes: StrokePoint[][]) => void
+  orbActive: boolean
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const strokes = useRef<StrokePoint[][]>([])
+  const drawing = useRef(false)
+
+  useEffect(() => {
+    const c = ref.current
+    if (!c) return
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    const paint = () => {
+      ctx.fillStyle = '#0a0e14'
+      ctx.fillRect(0, 0, c.width, c.height)
+      ctx.strokeStyle = orbActive ? '#ff3b5c' : '#f2f4f8'
+      ctx.lineWidth = 4
+      ctx.lineCap = 'round'
+      for (const stroke of strokes.current) {
+        if (stroke.length < 2) continue
+        ctx.beginPath()
+        ctx.moveTo(stroke[0]!.x * c.width, stroke[0]!.y * c.height)
+        for (let i = 1; i < stroke.length; i++) {
+          ctx.lineTo(stroke[i]!.x * c.width, stroke[i]!.y * c.height)
+        }
+        ctx.stroke()
+      }
+    }
+    paint()
+    const pos = (e: PointerEvent) => {
+      const r = c.getBoundingClientRect()
+      return {
+        x: (e.clientX - r.left) / r.width,
+        y: (e.clientY - r.top) / r.height,
+      }
+    }
+    const down = (e: PointerEvent) => {
+      drawing.current = true
+      c.setPointerCapture(e.pointerId)
+      strokes.current.push([pos(e)])
+    }
+    const move = (e: PointerEvent) => {
+      if (!drawing.current) return
+      strokes.current[strokes.current.length - 1]?.push(pos(e))
+      paint()
+    }
+    const up = () => {
+      drawing.current = false
+    }
+    c.addEventListener('pointerdown', down)
+    c.addEventListener('pointermove', move)
+    c.addEventListener('pointerup', up)
+    c.addEventListener('pointercancel', up)
+    return () => {
+      c.removeEventListener('pointerdown', down)
+      c.removeEventListener('pointermove', move)
+      c.removeEventListener('pointerup', up)
+      c.removeEventListener('pointercancel', up)
+    }
+  }, [orbActive])
+
+  return (
+    <div className={`draw-wrap ${orbActive ? 'orb' : ''}`}>
+      <canvas ref={ref} width={360} height={360} className="draw-pad" />
+      <button
+        type="button"
+        className="btn primary"
+        onClick={() => onSubmit(strokes.current)}
+      >
+        Klar
+      </button>
+    </div>
+  )
+}
+
+export function MicroView({ room }: { room: PublicRoom }) {
+  const micro = room.micro
+  if (!micro) return null
+
+  if (micro.kind === 'blitz') {
+    return (
+      <section className="play">
+        <p className="eyebrow">Blitzfakta</p>
+        <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={9000} />
+        <h2 className="prompt">{micro.prompt}</h2>
+        <div className="option-grid">
+          {micro.options.map((opt, i) => (
+            <button
+              key={opt}
+              type="button"
+              className={`option ${micro.yourAnswer === i ? 'picked' : ''}`}
+              disabled={micro.yourAnswer !== null}
+              onClick={() => {
+                uiClick()
+                void blitzAnswer(i)
+              }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (micro.kind === 'sms') return <SmsView room={room} />
+  if (micro.kind === 'emoji') return <EmojiView room={room} />
+  if (micro.kind === 'klotter') return <KlotterView room={room} />
+  if (micro.kind === 'arena') return <ArenaView room={room} />
+  if (micro.kind === 'labb') return <LabbView room={room} />
+  if (micro.kind === 'live') return <LiveView room={room} />
+  return null
+}
+
+function SmsView({ room }: { room: PublicRoom }) {
+  const micro = room.micro!
+  if (micro.kind !== 'sms') return null
+  const [text, setText] = useState('')
+  return (
+    <section className="play">
+      <p className="eyebrow">
+        Sms-kupp · {micro.phase === 'write' ? 'Skriv' : micro.phase === 'sabotage' ? 'Sabba' : 'Rösta'}
+      </p>
+      <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={35000} />
+      <h2 className="prompt">{micro.prompt}</h2>
+      {micro.phase === 'write' &&
+        (micro.yourDraft ? (
+          <p className="locked">Skickat — väntar…</p>
+        ) : (
+          <>
+            <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={140} rows={3} />
+            <button type="button" className="btn primary" onClick={() => void smsDraft(text).then(() => setText(''))}>
+              Skicka
+            </button>
+          </>
+        ))}
+      {micro.phase === 'sabotage' && micro.sabotageTarget && (
+        <>
+          <div className="sms-card">
+            <span>{micro.sabotageTarget.name} skrev</span>
+            <p>{micro.sabotageTarget.text}</p>
+          </div>
+          {micro.yourSabotage ? (
+            <p className="locked">Sabotage inne.</p>
+          ) : (
+            <>
+              <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={160} rows={3} />
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void smsSabotage(text).then(() => setText(''))}
+              >
+                Sabotera
+              </button>
+            </>
+          )}
+        </>
+      )}
+      {micro.phase === 'vote' && micro.voteOptions && (
+        <div className="vote-list">
+          {micro.voteOptions.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className={`sms-card vote ${micro.yourVote === o.id ? 'picked' : ''}`}
+              disabled={micro.yourVote !== null}
+              onClick={() => void smsVote(o.id)}
+            >
+              <span>Anonym kupp</span>
+              <p>{o.text}</p>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function EmojiView({ room }: { room: PublicRoom }) {
+  const micro = room.micro!
+  if (micro.kind !== 'emoji') return null
+  const [text, setText] = useState('')
+  return (
+    <section className="play">
+      <p className="eyebrow">Emoji-hopp · {micro.phase === 'emoji' ? 'Emoji' : 'Gissa'}</p>
+      <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={28000} />
+      {micro.phase === 'emoji' && (
+        <>
+          <h2 className="prompt">Visa med emoji: {micro.yourWord}</h2>
+          {micro.yourEmoji ? (
+            <p className="locked">{micro.yourEmoji}</p>
+          ) : (
+            <>
+              <input value={text} onChange={(e) => setText(e.target.value)} maxLength={24} placeholder="🍕🦈…" />
+              <button type="button" className="btn primary" onClick={() => void emojiSubmit(text).then(() => setText(''))}>
+                Skicka emoji
+              </button>
+            </>
+          )}
+        </>
+      )}
+      {micro.phase === 'guess' && micro.guessTarget && (
+        <>
+          <h2 className="prompt emoji-big">{micro.guessTarget.emoji}</h2>
+          {micro.yourGuess ? (
+            <p className="locked">Gissning inne.</p>
+          ) : (
+            <>
+              <input value={text} onChange={(e) => setText(e.target.value)} maxLength={40} placeholder="Vad betyder det?" />
+              <button type="button" className="btn primary" onClick={() => void emojiGuess(text).then(() => setText(''))}>
+                Gissa
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function KlotterView({ room }: { room: PublicRoom }) {
+  const micro = room.micro!
+  if (micro.kind !== 'klotter') return null
+  return (
+    <section className="play">
+      <p className="eyebrow">Sabotage-klotter · {micro.phase === 'draw' ? 'Rita' : 'Rösta'}</p>
+      <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={28000} />
+      {micro.phase === 'draw' && (
+        <>
+          <h2 className="prompt">Rita: {micro.yourWord}</h2>
+          {micro.yourDrawing ? (
+            <p className="locked">Inlämnad.</p>
+          ) : (
+            <DrawPad orbActive={micro.orbActive} onSubmit={(s) => void klotterSubmit(s)} />
+          )}
+        </>
+      )}
+      {micro.phase === 'vote' && micro.voteOptions && (
+        <div className="doodle-vote">
+          {micro.voteOptions.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className={`doodle-card ${micro.yourVote === o.id ? 'picked' : ''}`}
+              disabled={micro.yourVote !== null}
+              onClick={() => void klotterVote(o.id)}
+            >
+              <MiniDoodle strokes={o.strokes} />
+              <span>{o.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ArenaView({ room }: { room: PublicRoom }) {
+  const micro = room.micro!
+  if (micro.kind !== 'arena') return null
+  return (
+    <section className="play">
+      <p className="eyebrow">Arena-burst</p>
+      <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={28000} />
+      <div className="arena-stage">
+        {micro.fighters.map((f) => (
+          <div key={f.id} className="fighter" style={{ left: `${f.x}%` }}>
+            <MiniDoodle strokes={f.avatar ?? []} />
+            <div className="hp">
+              <div style={{ width: `${f.hp}%` }} />
+            </div>
+            <span>{f.name}</span>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="btn primary punch-btn"
+        onPointerDown={(e) => {
+          e.preventDefault()
+          void arenaPunch()
+        }}
+      >
+        DUNKA · {micro.yourPunches}
+      </button>
+    </section>
+  )
+}
+
+function LabbView({ room }: { room: PublicRoom }) {
+  const micro = room.micro!
+  if (micro.kind !== 'labb') return null
+  const next = micro.recipe[micro.yourStep]
+  return (
+    <section className="play">
+      <p className="eyebrow">Labbpuls</p>
+      <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={40000} />
+      <h2 className="prompt">Levererade: {micro.yourDelivered} · Fail: {micro.yourFails}</h2>
+      <p className="lede">Nästa steg: <strong>{next ?? '—'}</strong></p>
+      <div className="labb-grid">
+        {micro.recipe.map((step) => (
+          <button
+            key={step}
+            type="button"
+            className={`btn ${step === next ? 'primary' : 'ghost'}`}
+            onClick={() => void labbTap(step)}
+          >
+            {step}
+          </button>
+        ))}
+      </div>
+      <ol className="reveal-scores">
+        {micro.leaderboard.map((l) => (
+          <li key={l.id}>
+            <span>{l.name}</span>
+            <span>{l.delivered}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+function LiveView({ room }: { room: PublicRoom }) {
+  const micro = room.micro!
+  if (micro.kind !== 'live') return null
+  const [text, setText] = useState('')
+  return (
+    <section className="play">
+      <p className="eyebrow">Live-test · {micro.phase === 'play' ? 'Utför' : 'Betyg'}</p>
+      <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={45000} />
+      <h2 className="prompt">{micro.challenge}</h2>
+      {micro.phase === 'play' && !micro.isHost && (
+        <>
+          {micro.challengeKind === 'write' && !micro.yourDone && (
+            <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={80} rows={2} />
+          )}
+          {micro.yourDone ? (
+            <p className="locked">Klar — väntar på host.</p>
+          ) : (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void liveDone(micro.challengeKind === 'write' ? text : undefined)}
+            >
+              Jag är klar
+            </button>
+          )}
+        </>
+      )}
+      {micro.phase === 'play' && micro.isHost && (
+        <p className="muted">{micro.doneCount} klara — du betygsätter snart.</p>
+      )}
+      {micro.phase === 'score' && micro.isHost && (
+        <div className="vote-list">
+          {micro.players.map((p) => (
+            <div key={p.id} className="sms-card">
+              <span>{p.name}{p.write ? ` — “${p.write}”` : ''}</span>
+              <div className="star-row">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`chip ${p.score === s ? 'on' : ''}`}
+                    onClick={() => void liveScore(p.id, s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {micro.phase === 'score' && !micro.isHost && <p className="muted">Host betygsätter…</p>}
+    </section>
+  )
+}
