@@ -9,6 +9,7 @@ import {
   pulseHit,
   rejoinGame,
   rematchGame,
+  setHostPlaying,
   setLanguage,
   startGame,
   useSabotage,
@@ -30,6 +31,10 @@ import type { PublicRoom, PulseHitGrade } from './types'
 
 type Screen = 'home' | 'create' | 'join' | 'play'
 
+function qrUrl(data: string, size = 220) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=10&data=${encodeURIComponent(data)}`
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [room, setRoom] = useState<PublicRoom | null>(null)
@@ -39,6 +44,8 @@ export default function App() {
   const [error, setError] = useState('')
   const [mute, setMute] = useState(isMuted())
   const [busy, setBusy] = useState(false)
+  const [tvMode, setTvMode] = useState(false)
+  const [startAsTv, setStartAsTv] = useState(true)
 
   useEffect(() => {
     getSocket()
@@ -63,7 +70,9 @@ export default function App() {
     setError('')
     try {
       uiClick()
-      await createGame(name || 'Host', lang)
+      // Default: host does not play (TV). Optional play-along via chip.
+      await createGame(name || 'Host', lang, !startAsTv)
+      setTvMode(startAsTv)
       setScreen('play')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Fel')
@@ -87,7 +96,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${tvMode && screen === 'play' ? ' tv-mode' : ''}`}>
       <div className="pulse-bg" aria-hidden>
         <div className="pulse-ring r1" />
         <div className="pulse-ring r2" />
@@ -107,18 +116,29 @@ export default function App() {
           <span className="brand-mark">PK</span>
           <span className="brand-name">Pulskaos</span>
         </button>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Mute"
-          onClick={() => {
-            const next = !mute
-            setMute(next)
-            setMuted(next)
-          }}
-        >
-          {mute ? 'Ljud av' : 'Ljud'}
-        </button>
+        <div className="topbar-actions">
+          {screen === 'play' && room && room.youId === room.hostId && (
+            <button
+              type="button"
+              className={`icon-btn ${tvMode ? 'on' : ''}`}
+              onClick={() => setTvMode((v) => !v)}
+            >
+              {tvMode ? 'TV av' : 'TV-läge'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Mute"
+            onClick={() => {
+              const next = !mute
+              setMute(next)
+              setMuted(next)
+            }}
+          >
+            {mute ? 'Ljud av' : 'Ljud'}
+          </button>
+        </div>
       </header>
 
       <main className="shell">
@@ -136,22 +156,40 @@ export default function App() {
             error={error}
             busy={busy}
             extra={
-              <div className="lang-row">
-                <button
-                  type="button"
-                  className={lang === 'sv' ? 'chip on' : 'chip'}
-                  onClick={() => setLang('sv')}
-                >
-                  Svenska
-                </button>
-                <button
-                  type="button"
-                  className={lang === 'en' ? 'chip on' : 'chip'}
-                  onClick={() => setLang('en')}
-                >
-                  English
-                </button>
-              </div>
+              <>
+                <div className="lang-row">
+                  <button
+                    type="button"
+                    className={lang === 'sv' ? 'chip on' : 'chip'}
+                    onClick={() => setLang('sv')}
+                  >
+                    Svenska
+                  </button>
+                  <button
+                    type="button"
+                    className={lang === 'en' ? 'chip on' : 'chip'}
+                    onClick={() => setLang('en')}
+                  >
+                    English
+                  </button>
+                </div>
+                <div className="lang-row">
+                  <button
+                    type="button"
+                    className={startAsTv ? 'chip on' : 'chip'}
+                    onClick={() => setStartAsTv(true)}
+                  >
+                    Host på TV
+                  </button>
+                  <button
+                    type="button"
+                    className={!startAsTv ? 'chip on' : 'chip'}
+                    onClick={() => setStartAsTv(false)}
+                  >
+                    Spela med
+                  </button>
+                </div>
+              </>
             }
             actionLabel="Öppna lobby"
             onAction={onCreate}
@@ -185,9 +223,12 @@ export default function App() {
         {screen === 'play' && room && (
           <PlayView
             room={room}
+            tvMode={tvMode}
+            setTvMode={setTvMode}
             onLeave={() => {
               clearSession()
               setRoom(null)
+              setTvMode(false)
               setScreen('home')
             }}
           />
@@ -271,13 +312,33 @@ function AuthCard(props: {
   )
 }
 
-function PlayView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }) {
-  if (room.status === 'lobby') return <Lobby room={room} onLeave={onLeave} />
-  if (room.status === 'pulse' && room.pulse) return <PulseView room={room} />
+function PlayView({
+  room,
+  tvMode,
+  setTvMode,
+  onLeave,
+}: {
+  room: PublicRoom
+  tvMode: boolean
+  setTvMode: (v: boolean) => void
+  onLeave: () => void
+}) {
+  const me = room.players.find((p) => p.id === room.youId)
+  const spectating = Boolean(me && !me.playing)
+
+  if (room.status === 'lobby')
+    return <Lobby room={room} tvMode={tvMode} setTvMode={setTvMode} onLeave={onLeave} />
+  if (room.status === 'pulse' && room.pulse)
+    return <PulseView room={room} tvMode={tvMode} spectating={spectating} />
   if (room.status === 'micro' && room.micro)
     return (
       <section className="play">
-        <MicroView room={room} />
+        {(tvMode || spectating) && (
+          <p className="tv-wait">
+            {spectating ? 'Du hostar — spelarna kör på mobilen' : 'TV-läge'} · {room.playingCount} spelare
+          </p>
+        )}
+        <MicroView room={room} tvMode={tvMode || spectating} />
         <ScoreRail room={room} />
       </section>
     )
@@ -287,12 +348,16 @@ function PlayView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }) 
 }
 
 function ScoreRail({ room }: { room: PublicRoom }) {
-  const sorted = [...room.players].sort((a, b) => b.score - a.score)
+  const sorted = [...room.players]
+    .filter((p) => p.playing)
+    .sort((a, b) => b.score - a.score)
+  const hosts = room.players.filter((p) => !p.playing)
   return (
     <div className="score-rail">
       <div className="meta-pills">
         <span className="pill heat">Heat {room.heat}</span>
         <span className="pill">Natt {room.night}</span>
+        <span className="pill">{room.playingCount} spelare</span>
         {room.youAreSaboteur && (
           <span className="pill danger">Sabotör · {room.saboteurCharges}</span>
         )}
@@ -309,29 +374,64 @@ function ScoreRail({ room }: { room: PublicRoom }) {
           </li>
         ))}
       </ol>
+      {hosts.length > 0 && (
+        <p className="host-note">Host: {hosts.map((h) => h.name).join(', ')}</p>
+      )}
     </div>
   )
 }
 
-function Lobby({ room, onLeave }: { room: PublicRoom; onLeave: () => void }) {
+function Lobby({
+  room,
+  tvMode,
+  setTvMode,
+  onLeave,
+}: {
+  room: PublicRoom
+  tvMode: boolean
+  setTvMode: (v: boolean) => void
+  onLeave: () => void
+}) {
   const isHost = room.youId === room.hostId
+  const me = room.players.find((p) => p.id === room.youId)
   const joinUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}?join=${room.code}`
       : `?join=${room.code}`
+  const players = room.players.filter((p) => p.playing)
+  const canStart = room.playingCount >= 1
 
   return (
-    <section className="play">
+    <section className="play lobby">
       <div className="lobby-hero">
-        <p className="eyebrow">Lobby</p>
+        <p className="eyebrow">{tvMode ? 'TV-lobby' : 'Lobby'}</p>
         <div className="code-block">
           <span>Kod</span>
           <strong>{room.code}</strong>
         </div>
-        <p className="muted small">Dela länken eller koden. TV:n visar lobbyn.</p>
-        <a className="join-link" href={joinUrl}>
-          {joinUrl.replace(/^https?:\/\//, '')}
-        </a>
+        <div className="invite-qr">
+          <img
+            src={qrUrl(joinUrl, tvMode ? 280 : 200)}
+            alt="QR för att gå med"
+            width={tvMode ? 280 : 200}
+            height={tvMode ? 280 : 200}
+          />
+        </div>
+        {!tvMode && (
+          <>
+            <p className="muted small">Skanna QR eller dela koden.</p>
+            <a className="join-link" href={joinUrl}>
+              {joinUrl.replace(/^https?:\/\//, '')}
+            </a>
+          </>
+        )}
+        {tvMode && (
+          <p className="lobby-waiting-hint">
+            {players.length === 0
+              ? 'Väntar på spelare…'
+              : `${players.length} redo — starta när ni är klara`}
+          </p>
+        )}
       </div>
       <ScoreRail room={room} />
       <div className="actions">
@@ -352,10 +452,25 @@ function Lobby({ room, onLeave }: { room: PublicRoom; onLeave: () => void }) {
               >
                 EN
               </button>
+              <button
+                type="button"
+                className={tvMode ? 'chip on' : 'chip'}
+                onClick={() => setTvMode(!tvMode)}
+              >
+                {tvMode ? 'TV på' : 'TV'}
+              </button>
+              <button
+                type="button"
+                className={me?.playing ? 'chip on' : 'chip'}
+                onClick={() => void setHostPlaying(!(me?.playing ?? false))}
+              >
+                {me?.playing ? 'Spelar med' : 'Bara hosta'}
+              </button>
             </div>
             <button
               type="button"
               className="btn primary pulse-btn"
+              disabled={!canStart}
               onClick={() => {
                 uiClick()
                 void startGame()
@@ -363,23 +478,37 @@ function Lobby({ room, onLeave }: { room: PublicRoom; onLeave: () => void }) {
             >
               Starta Pulse
             </button>
+            {!canStart && (
+              <p className="muted small">Minst en spelare måste gå med (eller välj “Spelar med”).</p>
+            )}
           </>
         )}
         {!isHost && <p className="muted">Väntar på host…</p>}
-        <button type="button" className="btn ghost" onClick={onLeave}>
-          Lämna
-        </button>
+        {!tvMode && (
+          <button type="button" className="btn ghost" onClick={onLeave}>
+            Lämna
+          </button>
+        )}
       </div>
     </section>
   )
 }
 
-function PulseView({ room }: { room: PublicRoom }) {
+function PulseView({
+  room,
+  tvMode,
+  spectating,
+}: {
+  room: PublicRoom
+  tvMode: boolean
+  spectating: boolean
+}) {
   const pulse = room.pulse!
   const [now, setNow] = useState(Date.now())
   const [flash, setFlash] = useState<PulseHitGrade | null>(null)
   const lastBeat = useRef(0)
   const skew = useRef(room.serverNow - Date.now())
+  const displayOnly = tvMode || spectating
 
   useEffect(() => {
     skew.current = room.serverNow - Date.now()
@@ -390,7 +519,6 @@ function PulseView({ room }: { room: PublicRoom }) {
     return () => clearInterval(id)
   }, [])
 
-  // Metronome tick without music
   useEffect(() => {
     const beatMs = 60_000 / pulse.bpm
     const elapsed = now - pulse.startedAt
@@ -402,6 +530,7 @@ function PulseView({ room }: { room: PublicRoom }) {
   }, [now, pulse.bpm, pulse.startedAt])
 
   const onHit = useEffectEvent(async (lane: 0 | 1 | 2) => {
+    if (displayOnly) return
     const upcoming = pulse.notes
       .filter((n) => n.lane === lane && !pulse.yourHits[n.id])
       .sort((a, b) => Math.abs(a.hitAt - now) - Math.abs(b.hitAt - now))[0]
@@ -425,6 +554,7 @@ function PulseView({ room }: { room: PublicRoom }) {
   })
 
   useEffect(() => {
+    if (displayOnly) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'a' || e.key === 'A' || e.key === '1') void onHit(0)
       if (e.key === 's' || e.key === 'S' || e.key === '2') void onHit(1)
@@ -432,7 +562,7 @@ function PulseView({ room }: { room: PublicRoom }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onHit])
+  }, [onHit, displayOnly])
 
   const travel = 1400
   const kindLabel =
@@ -442,18 +572,30 @@ function PulseView({ room }: { room: PublicRoom }) {
     <section className="play pulse-play">
       <div className="pulse-header">
         <div>
-          <p className="eyebrow">{kindLabel}</p>
+          <p className="eyebrow">{kindLabel}{displayOnly ? ' · TV' : ''}</p>
           <h2>
             {pulse.bpm} <span className="unit">BPM</span>
           </h2>
         </div>
-        <div className="mult">
-          ×{pulse.yourMultiplier.toFixed(2)}
-          <span>mult</span>
-        </div>
+        {!displayOnly && (
+          <div className="mult">
+            ×{pulse.yourMultiplier.toFixed(2)}
+            <span>mult</span>
+          </div>
+        )}
+        {displayOnly && (
+          <div className="mult">
+            {room.playingCount}
+            <span>spelare</span>
+          </div>
+        )}
       </div>
 
-      <div className={`lane-stage ${flash ? `flash-${flash}` : ''}`}>
+      {displayOnly && (
+        <p className="tv-wait">Spelarna träffar pulsen på sina telefoner</p>
+      )}
+
+      <div className={`lane-stage ${flash ? `flash-${flash}` : ''} ${displayOnly ? 'tv-lanes' : ''}`}>
         <div className="hit-line" />
         {[0, 1, 2].map((lane) => (
           <div key={lane} className="lane">
@@ -471,21 +613,23 @@ function PulseView({ room }: { room: PublicRoom }) {
                   />
                 )
               })}
-            <button
-              type="button"
-              className="lane-pad"
-              onPointerDown={(e) => {
-                e.preventDefault()
-                void onHit(lane as 0 | 1 | 2)
-              }}
-            >
-              {lane === 0 ? 'A' : lane === 1 ? 'S' : 'D'}
-            </button>
+            {!displayOnly && (
+              <button
+                type="button"
+                className="lane-pad"
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  void onHit(lane as 0 | 1 | 2)
+                }}
+              >
+                {lane === 0 ? 'A' : lane === 1 ? 'S' : 'D'}
+              </button>
+            )}
           </div>
         ))}
       </div>
 
-      {flash && (
+      {flash && !displayOnly && (
         <div className={`grade-pop ${flash}`} key={flash + String(now)}>
           {flash === 'perfect' ? 'PERFECT' : flash === 'good' ? 'GOOD' : 'MISS'}
         </div>
@@ -493,10 +637,10 @@ function PulseView({ room }: { room: PublicRoom }) {
 
       <ScoreRail room={room} />
 
-      {room.youAreSaboteur && room.saboteurCharges > 0 && (
+      {!displayOnly && room.youAreSaboteur && room.saboteurCharges > 0 && (
         <div className="sab-row">
           {room.players
-            .filter((p) => p.id !== room.youId)
+            .filter((p) => p.id !== room.youId && p.playing)
             .map((p) => (
               <button
                 key={p.id}
@@ -539,7 +683,7 @@ function RevealView({ room }: { room: PublicRoom }) {
 }
 
 function WinnerView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }) {
-  const ranked = [...room.players].sort((a, b) => b.score - a.score)
+  const ranked = [...room.players].filter((p) => p.playing).sort((a, b) => b.score - a.score)
   const winner = ranked[0]
   const isHost = room.youId === room.hostId
   const you = room.players.find((p) => p.id === room.youId)

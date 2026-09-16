@@ -22,6 +22,8 @@ export type Player = {
   streak: number
   connected: boolean
   host: boolean
+  /** false = hostar bara / TV, spelar inte */
+  playing: boolean
 }
 
 export type PulseNote = {
@@ -168,6 +170,7 @@ export type PublicPlayer = {
   streak: number
   connected: boolean
   host: boolean
+  playing: boolean
 }
 
 export type PublicRoom = {
@@ -195,6 +198,7 @@ export type PublicRoom = {
   lastReveal: RevealPayload | null
   language: 'sv' | 'en'
   serverNow: number
+  playingCount: number
 }
 
 export type PublicMicro =

@@ -9,3 +9,4 @@ dist/
 *.log
 .vite/
 .wrangler/
+client/.env.production

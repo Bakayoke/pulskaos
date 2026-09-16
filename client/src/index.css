@@ -116,13 +116,101 @@ button {
   }
 }
 
-.topbar,
-.shell {
-  position: relative;
-  z-index: 1;
+.topbar-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.icon-btn.on {
+  border-color: rgba(214, 255, 63, 0.45);
+  color: var(--accent);
+}
+
+.invite-qr {
+  margin: 1rem auto;
+  width: fit-content;
+  padding: 0.75rem;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.invite-qr img {
+  display: block;
+  border-radius: 8px;
+}
+
+.host-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.tv-wait {
+  text-align: center;
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.tv-mode .shell {
+  max-width: 920px;
+}
+
+.tv-mode .code-block strong {
+  font-size: clamp(3.2rem, 12vw, 5.5rem);
+  letter-spacing: 0.35em;
+}
+
+.tv-mode .invite-qr img {
+  width: 280px;
+  height: 280px;
+}
+
+.tv-mode .prompt,
+.tv-mode .tv-prompt {
+  font-size: clamp(1.8rem, 5vw, 2.8rem);
+  text-align: center;
+}
+
+.tv-mode .score-rail li {
+  font-size: 1.15rem;
+  padding: 0.55rem 0.5rem;
+}
+
+.tv-mode .lane-stage.tv-lanes {
+  height: min(58vh, 520px);
+}
+
+.tv-mode .lane-stage.tv-lanes .lane-pad {
+  display: none;
+}
+
+.tv-mode .lobby-waiting-hint {
+  font-size: 1.25rem;
+  color: var(--muted);
+}
+
+.tv-micro {
+  display: grid;
+  gap: 0.85rem;
+  justify-items: center;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tv-arena {
+  width: 100%;
 }
 
 .topbar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -171,6 +259,8 @@ button {
 }
 
 .shell {
+  position: relative;
+  z-index: 1;
   max-width: 560px;
   margin: 0 auto;
   padding: 0.5rem 1.25rem 3rem;

@@ -58,10 +58,10 @@ function emitAck<T = Record<string, unknown>>(
   })
 }
 
-export async function createGame(name: string, language: 'sv' | 'en') {
+export async function createGame(name: string, language: 'sv' | 'en', hostPlays = false) {
   const res = await emitAck<{ ok?: boolean; error?: string; playerId?: string; code?: string }>(
     'create',
-    { name, language },
+    { name, language, hostPlays },
   )
   if (res.error || !res.code || !res.playerId) throw new Error(res.error || 'Kunde inte skapa')
   saveSession({ code: res.code, playerId: res.playerId, name })
@@ -95,6 +95,7 @@ export async function rejoinGame() {
 export const startGame = () => emitAck('start')
 export const rematchGame = () => emitAck('rematch')
 export const setLanguage = (language: 'sv' | 'en') => emitAck('setLanguage', { language })
+export const setHostPlaying = (playing: boolean) => emitAck('setHostPlaying', { playing })
 export const pulseHit = (noteId: string, lane: number) =>
   emitAck<{ ok?: boolean; grade?: string; error?: string }>('pulseHit', { noteId, lane })
 export const useSabotage = (targetId: string) => emitAck('sabotage', { targetId })

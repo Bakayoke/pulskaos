@@ -21,6 +21,7 @@ export type PublicPlayer = {
   streak: number
   connected: boolean
   host: boolean
+  playing: boolean
 }
 
 export type PulseNote = {
@@ -161,4 +162,5 @@ export type PublicRoom = {
   } | null
   language: 'sv' | 'en'
   serverNow: number
+  playingCount: number
 }

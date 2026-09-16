@@ -17,7 +17,7 @@ import type {
 } from './types.js'
 
 function active(room: Room): Player[] {
-  return room.players.filter((p) => p.connected)
+  return room.players.filter((p) => p.connected && p.playing)
 }
 
 function living(room: Room): Player[] {
@@ -41,7 +41,8 @@ function scoreRows(
   room: Room,
   deltas: Record<string, number>,
 ): RevealPayload['scores'] {
-  return living(room)
+  return room.players
+    .filter((p) => p.playing)
     .map((p) => ({
       id: p.id,
       name: p.name,
@@ -323,7 +324,7 @@ export function toPublicMicro(room: Room, viewerId?: string): PublicMicro | null
     yourWrite: viewerId ? live.writes[viewerId] ?? null : null,
     doneCount: Object.keys(live.done).length,
     players: room.players
-      .filter((p) => p.id !== room.hostId)
+      .filter((p) => p.playing)
       .map((p) => ({
         id: p.id,
         name: p.name,
@@ -518,7 +519,7 @@ export function resolveLive(room: Room, reveal: RevealFn) {
   if (room.micro?.kind !== 'live') return
   const live = room.micro.live
   const deltas: Record<string, number> = {}
-  for (const p of room.players.filter((x) => x.id !== room.hostId)) {
+  for (const p of room.players.filter((x) => x.playing)) {
     const stars = live.scores[p.id] ?? (live.done[p.id] ? 3 : 0)
     const delta = stars * 100
     applyDelta(room, p.id, delta)

@@ -144,9 +144,13 @@ function DrawPad({
   )
 }
 
-export function MicroView({ room }: { room: PublicRoom }) {
+export function MicroView({ room, tvMode = false }: { room: PublicRoom; tvMode?: boolean }) {
   const micro = room.micro
   if (!micro) return null
+
+  if (tvMode) {
+    return <TvMicroMirror room={room} />
+  }
 
   if (micro.kind === 'blitz') {
     return (
@@ -181,6 +185,82 @@ export function MicroView({ room }: { room: PublicRoom }) {
   if (micro.kind === 'labb') return <LabbView room={room} />
   if (micro.kind === 'live') return <LiveView room={room} />
   return null
+}
+
+function TvMicroMirror({ room }: { room: PublicRoom }) {
+  const micro = room.micro!
+  const left = useCountdown(micro.endsAt, room.serverNow)
+  const title =
+    micro.kind === 'blitz'
+      ? 'Blitzfakta'
+      : micro.kind === 'sms'
+        ? 'Sms-kupp'
+        : micro.kind === 'emoji'
+          ? 'Emoji-hopp'
+          : micro.kind === 'klotter'
+            ? 'Sabotage-klotter'
+            : micro.kind === 'arena'
+              ? 'Arena-burst'
+              : micro.kind === 'labb'
+                ? 'Labbpuls'
+                : 'Live-test'
+
+  let body: string | null = null
+  if (micro.kind === 'blitz') body = micro.prompt
+  if (micro.kind === 'sms') body = micro.prompt
+  if (micro.kind === 'emoji' && micro.phase === 'guess' && micro.guessTarget)
+    body = micro.guessTarget.emoji
+  if (micro.kind === 'live') body = micro.challenge
+  if (micro.kind === 'labb') body = micro.recipe.join(' → ')
+  if (micro.kind === 'arena') body = 'Dunka på mobilen!'
+  if (micro.kind === 'klotter' && micro.phase === 'vote') body = 'Rösta på bästa klotter'
+  if (micro.kind === 'klotter' && micro.phase === 'draw') body = 'Rita på mobilen'
+
+  return (
+    <div className="tv-micro">
+      <p className="eyebrow">{title}</p>
+      <div className="timer-bar">
+        <div style={{ width: `${Math.min(100, (left / 40000) * 100)}%` }} />
+      </div>
+      {body && <h2 className="prompt tv-prompt">{body}</h2>}
+      {micro.kind === 'arena' && (
+        <div className="arena-stage tv-arena">
+          {micro.fighters.map((f) => (
+            <div key={f.id} className="fighter" style={{ left: `${f.x}%` }}>
+              <MiniDoodle strokes={f.avatar ?? []} />
+              <div className="hp">
+                <div style={{ width: `${f.hp}%` }} />
+              </div>
+              <span>
+                {f.name} · {f.punches}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {micro.kind === 'klotter' && micro.phase === 'vote' && micro.voteOptions && (
+        <div className="doodle-vote">
+          {micro.voteOptions.map((o) => (
+            <div key={o.id} className="doodle-card">
+              <MiniDoodle strokes={o.strokes} />
+              <span>{o.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {micro.kind === 'labb' && (
+        <ol className="reveal-scores">
+          {micro.leaderboard.map((l) => (
+            <li key={l.id}>
+              <span>{l.name}</span>
+              <span>{l.delivered}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <p className="tv-wait">Spelas på telefonerna</p>
+    </div>
+  )
 }
 
 function SmsView({ room }: { room: PublicRoom }) {

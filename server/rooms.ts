@@ -52,7 +52,7 @@ function living(room: Room): Player[] {
 }
 
 function activePlayers(room: Room): Player[] {
-  return room.players.filter((p) => p.connected)
+  return room.players.filter((p) => p.connected && p.playing)
 }
 
 function ensureUsed(code: string) {
@@ -78,6 +78,9 @@ export function hydrateRooms(list: Room[]) {
     if (!r.echo.avatars) r.echo.avatars = {}
     if (!r.echo.emojiFails) r.echo.emojiFails = []
     if (!r.lastMults) r.lastMults = {}
+    for (const p of r.players) {
+      if (typeof p.playing !== 'boolean') p.playing = !p.host
+    }
     rooms.set(r.code, r)
   }
 }
@@ -109,6 +112,7 @@ export function createRoom(
   hostName: string,
   socketId: string,
   language: 'sv' | 'en' = 'sv',
+  hostPlays = false,
 ): { room: Room; playerId: string } {
   let code = codeAlpha()
   while (rooms.has(code)) code = codeAlpha()
@@ -122,6 +126,7 @@ export function createRoom(
     streak: 0,
     connected: true,
     host: true,
+    playing: hostPlays,
   }
 
   const room: Room = {
@@ -173,6 +178,7 @@ export function joinRoom(
     streak: 0,
     connected: true,
     host: false,
+    playing: true,
   })
   socketToPlayer.set(socketId, { code: room.code, playerId })
   touch(room)
@@ -247,6 +253,18 @@ export function setLanguage(code: string, playerId: string, language: 'sv' | 'en
   return { room }
 }
 
+export function setHostPlaying(code: string, playerId: string, playing: boolean) {
+  const room = getRoom(code)
+  if (!room) return { error: 'Rummet finns inte' }
+  if (room.hostId !== playerId) return { error: 'Bara hosten' }
+  if (room.status !== 'lobby') return { error: 'Kan inte ändra nu' }
+  const host = room.players.find((p) => p.id === playerId)
+  if (!host) return { error: 'Host saknas' }
+  host.playing = playing
+  touch(room)
+  return { room }
+}
+
 function pickSaboteur(room: Room) {
   const pool = activePlayers(room)
   if (pool.length < 2) {
@@ -263,7 +281,7 @@ export function startGame(code: string, playerId: string) {
   if (!room) return { error: 'Rummet finns inte' }
   if (room.hostId !== playerId) return { error: 'Bara hosten kan starta' }
   if (room.status !== 'lobby') return { error: 'Spelet har startat' }
-  if (activePlayers(room).length < 1) return { error: 'Behöver minst 1 spelare' }
+  if (activePlayers(room).length < 1) return { error: 'Behöver minst 1 spelare (host kan bara TV:a)' }
 
   for (const p of room.players) {
     p.score = 0
@@ -316,6 +334,7 @@ export function rematch(code: string, playerId: string) {
   for (const p of room.players) {
     p.score = 0
     p.streak = 0
+    if (!p.host) p.playing = true
   }
   room.lastMults = {}
   touch(room)
@@ -423,6 +442,7 @@ export function submitPulseHit(code: string, playerId: string, noteId: string, l
   if (!room || room.status !== 'pulse' || !room.pulse) return { error: 'Ingen puls' }
   const player = room.players.find((p) => p.id === playerId)
   if (!player) return { error: 'Spelare saknas' }
+  if (!player.playing) return { error: 'Du hostar bara' }
   const note = room.pulse.notes.find((n) => n.id === noteId)
   if (!note) return { error: 'Okänd not' }
   if (note.lane !== lane) return { error: 'Fel lane' }
@@ -496,12 +516,12 @@ export function useSabotage(code: string, playerId: string, targetId: string) {
 export function submitBlitzAnswer(code: string, playerId: string, index: number) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'blitz') return { error: 'Ingen blitz' }
+  const player = room.players.find((p) => p.id === playerId)
+  if (!player?.playing) return { error: 'Du hostar bara' }
   const blitz = room.micro.blitz
   if (blitz.answers[playerId]) return { ok: true }
   if (index < 0 || index >= blitz.options.length) return { error: 'Ogiltigt svar' }
   blitz.answers[playerId] = { index, at: Date.now() }
-  const player = room.players.find((p) => p.id === playerId)
-  if (!player) return { error: 'Spelare saknas' }
   if (index !== blitz.correctIndex) {
     player.streak = 0
     const wrong = blitz.options[index]
@@ -515,6 +535,8 @@ export function submitBlitzAnswer(code: string, playerId: string, index: number)
 export function submitSmsDraft(code: string, playerId: string, text: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'sms') return { error: 'Ingen sms-runda' }
+  const player = room.players.find((p) => p.id === playerId)
+  if (!player?.playing) return { error: 'Du hostar bara' }
   const sms = room.micro.sms
   if (sms.phase !== 'write') return { error: 'Fel fas' }
   const clean = text.trim().slice(0, 140)
@@ -531,6 +553,7 @@ export function submitSmsDraft(code: string, playerId: string, text: string) {
 export function submitSmsSabotage(code: string, playerId: string, text: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'sms') return { error: 'Ingen sms-runda' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const sms = room.micro.sms
   if (sms.phase !== 'sabotage') return { error: 'Fel fas' }
   const clean = text.trim().slice(0, 160)
@@ -549,6 +572,7 @@ export function submitSmsSabotage(code: string, playerId: string, text: string) 
 export function submitSmsVote(code: string, playerId: string, targetId: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'sms') return { error: 'Ingen sms-runda' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const sms = room.micro.sms
   if (sms.phase !== 'vote') return { error: 'Fel fas' }
   if (!sms.sabotaged[targetId]) return { error: 'Ogiltig' }
@@ -561,6 +585,7 @@ export function submitSmsVote(code: string, playerId: string, targetId: string) 
 export function submitEmoji(code: string, playerId: string, text: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'emoji') return { error: 'Ingen emoji-runda' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const e = room.micro.emoji
   if (e.phase !== 'emoji') return { error: 'Fel fas' }
   const clean = text.trim().slice(0, 24)
@@ -577,6 +602,7 @@ export function submitEmoji(code: string, playerId: string, text: string) {
 export function submitEmojiGuess(code: string, playerId: string, text: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'emoji') return { error: 'Ingen emoji-runda' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const e = room.micro.emoji
   if (e.phase !== 'guess') return { error: 'Fel fas' }
   const clean = text.trim().slice(0, 40)
@@ -590,6 +616,7 @@ export function submitEmojiGuess(code: string, playerId: string, text: string) {
 export function submitKlotter(code: string, playerId: string, strokes: StrokePoint[][]) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'klotter') return { error: 'Ingen klotter' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const k = room.micro.klotter
   if (k.phase !== 'draw') return { error: 'Fel fas' }
   k.drawings[playerId] = clampStrokes(strokes)
@@ -604,6 +631,7 @@ export function submitKlotter(code: string, playerId: string, strokes: StrokePoi
 export function submitKlotterVote(code: string, playerId: string, targetId: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'klotter') return { error: 'Ingen klotter' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const k = room.micro.klotter
   if (k.phase !== 'vote') return { error: 'Fel fas' }
   if (!k.drawings[targetId]) return { error: 'Ogiltig' }
@@ -616,6 +644,7 @@ export function submitKlotterVote(code: string, playerId: string, targetId: stri
 export function arenaPunch(code: string, playerId: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'arena') return { error: 'Ingen arena' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const a = room.micro.arena
   const me = a.fighters[playerId]
   if (!me || me.hp <= 0) return { error: 'K.O.' }
@@ -632,6 +661,7 @@ export function arenaPunch(code: string, playerId: string) {
 export function labbTap(code: string, playerId: string, step: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'labb') return { error: 'Inget labb' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const l = room.micro.labb
   const idx = l.progress[playerId] ?? 0
   const expected = l.recipe[idx]
@@ -656,11 +686,12 @@ export function liveDone(code: string, playerId: string, write?: string) {
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'live') return { error: 'Inget live-test' }
   const live = room.micro.live
   if (live.phase !== 'play') return { error: 'Fel fas' }
-  if (playerId === room.hostId) return { error: 'Host spelar inte' }
+  const player = room.players.find((p) => p.id === playerId)
+  if (!player?.playing) return { error: 'Du hostar bara' }
   live.done[playerId] = true
   if (live.kind === 'write' && write) live.writes[playerId] = write.trim().slice(0, 80)
   touch(room)
-  const contestants = activePlayers(room).filter((p) => p.id !== room.hostId)
+  const contestants = activePlayers(room)
   if (contestants.every((p) => live.done[p.id])) {
     enterLiveScore(room)
     touch(room)
@@ -677,7 +708,7 @@ export function liveScore(code: string, hostId: string, targetId: string, stars:
   const s = Math.min(5, Math.max(1, Math.round(stars)))
   live.scores[targetId] = s
   touch(room)
-  const contestants = room.players.filter((p) => p.id !== room.hostId)
+  const contestants = room.players.filter((p) => p.playing)
   if (contestants.every((p) => live.scores[p.id] != null)) resolveLive(room, showReveal)
   return { ok: true }
 }
@@ -746,7 +777,7 @@ export function tickRooms(): string[] {
           enterLiveScore(room)
           dirty = true
         } else {
-          for (const p of room.players.filter((x) => x.id !== room.hostId)) {
+          for (const p of room.players.filter((x) => x.playing)) {
             if (m.live.scores[p.id] == null) m.live.scores[p.id] = m.live.done[p.id] ? 3 : 1
           }
           resolveLive(room, showReveal)
@@ -796,6 +827,7 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
       streak: p.streak,
       connected: p.connected,
       host: p.host,
+      playing: p.playing,
     })),
     heat: room.heat,
     night: room.night,
@@ -813,5 +845,6 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
     lastReveal: room.lastReveal,
     language: room.language,
     serverNow: Date.now(),
+    playingCount: room.players.filter((p) => p.playing && p.connected).length,
   }
 }

@@ -21,6 +21,7 @@ import {
   reconnectSocket,
   rematch,
   setLanguage,
+  setHostPlaying,
   setPersistHook,
   startGame,
   submitBlitzAnswer,
@@ -115,7 +116,8 @@ io.on('connection', (socket) => {
   socket.on('create', (data, ack) => {
     const name = String(data?.name ?? 'Host')
     const language = data?.language === 'en' ? 'en' : 'sv'
-    const { room, playerId } = createRoom(name, socket.id, language)
+    const hostPlays = Boolean(data?.hostPlays)
+    const { room, playerId } = createRoom(name, socket.id, language, hostPlays)
     socket.join(room.code)
     ack?.({ ok: true, playerId, code: room.code })
     broadcastRoom(room.code)
@@ -146,6 +148,15 @@ io.on('connection', (socket) => {
     if (!binding) return ack?.({ error: 'Inte ansluten' })
     const language = data?.language === 'en' ? 'en' : 'sv'
     const result = setLanguage(binding.code, binding.playerId, language)
+    if ('error' in result) return ack?.({ error: result.error })
+    ack?.({ ok: true })
+    broadcastRoom(binding.code)
+  })
+
+  socket.on('setHostPlaying', (data, ack) => {
+    const binding = getBinding(socket.id)
+    if (!binding) return ack?.({ error: 'Inte ansluten' })
+    const result = setHostPlaying(binding.code, binding.playerId, Boolean(data?.playing))
     if ('error' in result) return ack?.({ error: result.error })
     ack?.({ ok: true })
     broadcastRoom(binding.code)
