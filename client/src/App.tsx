@@ -12,6 +12,7 @@ import {
   setHostPlaying,
   setLanguage,
   startGame,
+  lobbyReady,
   useSabotage,
 } from './api'
 import { MicroView } from './MicroViews'
@@ -550,12 +551,14 @@ function Lobby({
 }) {
   const isHost = room.youId === room.hostId
   const me = room.players.find((p) => p.id === room.youId)
+  const playing = Boolean(me?.playing)
   const joinUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}?join=${room.code}`
       : `?join=${room.code}`
   const players = room.players.filter((p) => p.playing)
   const canStart = room.playingCount >= 1
+  const ready = room.lobbyReady
 
   return (
     <section className="play lobby">
@@ -585,61 +588,97 @@ function Lobby({
           <p className="lobby-waiting-hint">
             {players.length === 0
               ? 'Väntar på spelare…'
-              : `${players.length} redo — starta när ni är klara`}
+              : ready
+                ? `${ready.voteCount}/${ready.need} redo — startar automatiskt`
+                : `${players.length} spelare i lobbyn`}
           </p>
         )}
       </div>
       <ScoreRail room={room} />
       <div className="actions">
         {isHost && (
-          <>
-            <div className="lang-row">
-              <button
-                type="button"
-                className={room.language === 'sv' ? 'chip on' : 'chip'}
-                onClick={() => void setLanguage('sv')}
-              >
-                SV
-              </button>
-              <button
-                type="button"
-                className={room.language === 'en' ? 'chip on' : 'chip'}
-                onClick={() => void setLanguage('en')}
-              >
-                EN
-              </button>
-              <button
-                type="button"
-                className={tvMode ? 'chip on' : 'chip'}
-                onClick={() => setTvMode(!tvMode)}
-              >
-                {tvMode ? 'TV på' : 'TV'}
-              </button>
-              <button
-                type="button"
-                className={me?.playing ? 'chip on' : 'chip'}
-                onClick={() => void setHostPlaying(!(me?.playing ?? false))}
-              >
-                {me?.playing ? 'Spelar med' : 'Bara hosta'}
-              </button>
-            </div>
+          <div className="lang-row">
             <button
               type="button"
-              className="btn primary pulse-btn"
-              disabled={!canStart}
-              onClick={() => {
-                uiClick()
-                void startGame()
-              }}
+              className={room.language === 'sv' ? 'chip on' : 'chip'}
+              onClick={() => void setLanguage('sv')}
             >
-              Starta Pulse
+              SV
             </button>
-            {!canStart && (
-              <p className="muted small">Minst en spelare måste gå med (eller välj “Spelar med”).</p>
-            )}
-          </>
+            <button
+              type="button"
+              className={room.language === 'en' ? 'chip on' : 'chip'}
+              onClick={() => void setLanguage('en')}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              className={tvMode ? 'chip on' : 'chip'}
+              onClick={() => setTvMode(!tvMode)}
+            >
+              {tvMode ? 'TV på' : 'TV'}
+            </button>
+            <button
+              type="button"
+              className={me?.playing ? 'chip on' : 'chip'}
+              onClick={() => void setHostPlaying(!(me?.playing ?? false))}
+            >
+              {me?.playing ? 'Spelar med' : 'Bara hosta'}
+            </button>
+          </div>
         )}
-        {!isHost && <p className="muted">Väntar på host…</p>}
+
+        {ready && canStart && (
+          <div className="rematch-meter">
+            <div
+              className="rematch-bar"
+              style={{
+                width: `${Math.min(100, (ready.voteCount / Math.max(1, ready.need)) * 100)}%`,
+              }}
+            />
+            <p>
+              Redo {ready.voteCount}/{ready.need} — majoritet startar
+            </p>
+          </div>
+        )}
+
+        {playing && (
+          <button
+            type="button"
+            className={`btn primary pulse-btn${ready?.youReady ? ' voted' : ''}`}
+            disabled={!canStart || Boolean(ready?.youReady)}
+            onClick={() => {
+              uiClick()
+              void lobbyReady()
+            }}
+          >
+            {ready?.youReady ? 'Du är redo!' : 'Redo — starta'}
+          </button>
+        )}
+
+        {isHost && !playing && (
+          <button
+            type="button"
+            className="btn primary pulse-btn"
+            disabled={!canStart}
+            onClick={() => {
+              uiClick()
+              void startGame()
+            }}
+          >
+            Starta Pulse (host)
+          </button>
+        )}
+
+        {!playing && !isHost && (
+          <p className="muted">Väntar på att spelarna trycker Redo…</p>
+        )}
+
+        {!canStart && isHost && (
+          <p className="muted small">Minst en spelare måste gå med (eller välj “Spelar med”).</p>
+        )}
+
         {!tvMode && (
           <button type="button" className="btn ghost" onClick={onLeave}>
             Lämna

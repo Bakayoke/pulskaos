@@ -20,6 +20,7 @@ import {
   pruneIdleRooms,
   reconnectSocket,
   voteRematch,
+  voteLobbyReady,
   setLanguage,
   setHostPlaying,
   setPersistHook,
@@ -166,6 +167,15 @@ io.on('connection', (socket) => {
     const binding = getBinding(socket.id)
     if (!binding) return ack?.({ error: 'Inte ansluten' })
     const result = startGame(binding.code, binding.playerId)
+    if ('error' in result) return ack?.({ error: result.error })
+    ack?.({ ok: true })
+    broadcastRoom(binding.code)
+  })
+
+  socket.on('lobbyReady', (_data, ack) => {
+    const binding = getBinding(socket.id)
+    if (!binding) return ack?.({ error: 'Inte ansluten' })
+    const result = voteLobbyReady(binding.code, binding.playerId)
     if ('error' in result) return ack?.({ error: result.error })
     ack?.({ ok: true })
     broadcastRoom(binding.code)

@@ -47,6 +47,7 @@ export type PublicMicro =
       yourAnswer: number | null
       answeredCount: number
       correctIndex: number | null
+      echoTrapIndex: number | null
     }
   | {
       kind: 'sms'
@@ -72,6 +73,7 @@ export type PublicMicro =
       guessTarget: { authorId: string; emoji: string } | null
       yourGuess: string | null
       guessCount: number
+      crowdEmojis: { id: string; name: string; emoji: string }[] | null
     }
   | {
       kind: 'klotter'
@@ -190,5 +192,10 @@ export type PublicRoom = {
     voteCount: number
     need: number
     youVoted: boolean
+  } | null
+  lobbyReady: {
+    voteCount: number
+    need: number
+    youReady: boolean
   } | null
 }

@@ -13,7 +13,7 @@ import {
   smsSabotage,
   smsVote,
 } from './api'
-import { uiClick } from './sfx'
+import { dramaSting, uiClick } from './sfx'
 import type { PublicRoom, StrokePoint } from './types'
 
 function useCountdown(endsAt: number | null | undefined, serverNow: number) {
@@ -159,20 +159,26 @@ export function MicroView({ room, tvMode = false }: { room: PublicRoom; tvMode?:
         <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={9000} />
         <h2 className="prompt">{micro.prompt}</h2>
         <div className="option-grid">
-          {micro.options.map((opt, i) => (
-            <button
-              key={opt}
-              type="button"
-              className={`option ${micro.yourAnswer === i ? 'picked' : ''}`}
-              disabled={micro.yourAnswer !== null}
-              onClick={() => {
-                uiClick()
-                void blitzAnswer(i)
-              }}
-            >
-              {opt}
-            </button>
-          ))}
+          {micro.options.map((opt, i) => {
+            const isTrap = micro.echoTrapIndex === i
+            const fellForIt = isTrap && micro.yourAnswer === i
+            return (
+              <button
+                key={opt}
+                type="button"
+                className={`option ${micro.yourAnswer === i ? 'picked' : ''} ${fellForIt ? 'echo-trap hit' : ''}`}
+                disabled={micro.yourAnswer !== null}
+                onClick={() => {
+                  if (isTrap) dramaSting()
+                  else uiClick()
+                  void blitzAnswer(i)
+                }}
+              >
+                {fellForIt && <span className="trap-tag">Echo-fälla!</span>}
+                {opt}
+              </button>
+            )
+          })}
         </div>
         <p className="muted ready-count">
           {micro.answeredCount}/{room.playingCount} svarade
@@ -193,44 +199,127 @@ export function MicroView({ room, tvMode = false }: { room: PublicRoom; tvMode?:
 function TvMicroMirror({ room }: { room: PublicRoom }) {
   const micro = room.micro!
   const left = useCountdown(micro.endsAt, room.serverNow)
+  const totalMs =
+    micro.kind === 'blitz'
+      ? 9000
+      : micro.kind === 'sms'
+        ? 35000
+        : micro.kind === 'live'
+          ? 45000
+          : micro.kind === 'labb'
+            ? 40000
+            : 28000
+
   const title =
     micro.kind === 'blitz'
       ? 'Blitzfakta'
       : micro.kind === 'sms'
-        ? 'Sms-kupp'
+        ? micro.phase === 'vote'
+          ? 'Sms-kupp · Rösta'
+          : micro.phase === 'sabotage'
+            ? 'Sms-kupp · Sabotage'
+            : 'Sms-kupp · Skriv'
         : micro.kind === 'emoji'
-          ? 'Emoji-hopp'
+          ? micro.phase === 'guess'
+            ? 'Emoji-hopp · Gissa'
+            : 'Emoji-hopp · Skapa'
           : micro.kind === 'klotter'
-            ? 'Sabotage-klotter'
+            ? micro.phase === 'vote'
+              ? 'Sabotage-klotter · Rösta'
+              : 'Sabotage-klotter · Rita'
             : micro.kind === 'arena'
               ? 'Arena-burst'
               : micro.kind === 'labb'
                 ? 'Labbpuls'
-                : 'Live-test'
+                : micro.phase === 'score'
+                  ? 'Live-test · Betyg'
+                  : 'Live-test'
 
   let body: string | null = null
   if (micro.kind === 'blitz') body = micro.prompt
   if (micro.kind === 'sms') body = micro.prompt
   if (micro.kind === 'emoji' && micro.phase === 'guess' && micro.guessTarget)
-    body = micro.guessTarget.emoji
+    body = null // shown as parade
   if (micro.kind === 'live') body = micro.challenge
   if (micro.kind === 'labb') body = micro.recipe.join(' → ')
   if (micro.kind === 'arena') body = 'Dunka på mobilen!'
-  if (micro.kind === 'klotter' && micro.phase === 'vote') body = 'Rösta på bästa klotter'
   if (micro.kind === 'klotter' && micro.phase === 'draw') body = 'Rita på mobilen'
 
   return (
     <div className="tv-micro">
       <p className="eyebrow">{title}</p>
       <div className="timer-bar">
-        <div style={{ width: `${Math.min(100, (left / 40000) * 100)}%` }} />
+        <div style={{ width: `${Math.min(100, (left / totalMs) * 100)}%` }} />
       </div>
       {body && <h2 className="prompt tv-prompt">{body}</h2>}
+
+      {micro.kind === 'blitz' && (
+        <div className="option-grid tv-options">
+          {micro.options.map((opt) => (
+            <div key={opt} className="option static">
+              {opt}
+            </div>
+          ))}
+          <p className="muted ready-count">
+            {micro.answeredCount}/{room.playingCount} svarade
+          </p>
+        </div>
+      )}
+
+      {micro.kind === 'sms' && micro.phase === 'vote' && micro.voteOptions && (
+        <div className="vote-list tv-sms-votes">
+          {micro.voteOptions.map((o) => (
+            <div key={o.id} className="sms-card">
+              <span>{o.authorName}</span>
+              <p>{o.text}</p>
+            </div>
+          ))}
+          <p className="muted ready-count">
+            {micro.voteCount}/{room.playingCount} röstat
+          </p>
+        </div>
+      )}
+      {micro.kind === 'sms' && micro.phase !== 'vote' && (
+        <p className="muted ready-count">
+          {micro.phase === 'write'
+            ? `${micro.draftCount}/${room.playingCount} skrivit`
+            : `${micro.sabotageCount}/${room.playingCount} sabbat`}
+        </p>
+      )}
+
+      {micro.kind === 'emoji' && (
+        <>
+          {micro.phase === 'guess' && micro.crowdEmojis && micro.crowdEmojis.length > 0 ? (
+            <div className="emoji-parade">
+              {micro.crowdEmojis.map((e) => (
+                <div key={e.id} className="emoji-parade-item">
+                  <span className="emoji-huge">{e.emoji}</span>
+                  <span>{e.name}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="tv-wait">
+              {micro.emojiCount}/{room.playingCount} har skickat emoji
+            </p>
+          )}
+          {micro.phase === 'guess' && (
+            <p className="muted ready-count">
+              {micro.guessCount}/{room.playingCount} gissat
+            </p>
+          )}
+        </>
+      )}
+
       {micro.kind === 'arena' && (
         <div className="arena-stage tv-arena">
           {micro.fighters.map((f) => (
             <div key={f.id} className="fighter" style={{ left: `${f.x}%` }}>
-              <MiniDoodle strokes={f.avatar ?? []} />
+              {f.avatar && f.avatar.length > 0 ? (
+                <MiniDoodle strokes={f.avatar} />
+              ) : (
+                <div className="fighter-fallback">{f.name.slice(0, 2).toUpperCase()}</div>
+              )}
               <div className="hp">
                 <div style={{ width: `${f.hp}%` }} />
               </div>
@@ -241,6 +330,7 @@ function TvMicroMirror({ room }: { room: PublicRoom }) {
           ))}
         </div>
       )}
+
       {micro.kind === 'klotter' && micro.phase === 'vote' && micro.voteOptions && (
         <div className="doodle-vote">
           {micro.voteOptions.map((o) => (
@@ -249,8 +339,17 @@ function TvMicroMirror({ room }: { room: PublicRoom }) {
               <span>{o.name}</span>
             </div>
           ))}
+          <p className="muted ready-count">
+            {micro.voteCount}/{room.playingCount} röstat
+          </p>
         </div>
       )}
+      {micro.kind === 'klotter' && micro.phase === 'draw' && (
+        <p className="muted ready-count">
+          {micro.drawCount}/{room.playingCount} ritat
+        </p>
+      )}
+
       {micro.kind === 'labb' && (
         <ol className="reveal-scores">
           {micro.leaderboard.map((l) => (
@@ -261,7 +360,25 @@ function TvMicroMirror({ room }: { room: PublicRoom }) {
           ))}
         </ol>
       )}
-      <p className="tv-wait">Spelas på telefonerna</p>
+
+      {micro.kind === 'live' && (
+        <div className="vote-list">
+          {micro.players.map((p) => (
+            <div key={p.id} className="sms-card">
+              <span>
+                {p.name}
+                {p.done ? ' · klar' : ' · …'}
+                {p.write ? ` — “${p.write}”` : ''}
+              </span>
+            </div>
+          ))}
+          <p className="muted ready-count">
+            {micro.phase === 'play'
+              ? `${micro.doneCount}/${room.playingCount} klara`
+              : `${micro.votersDone}/${room.playingCount} har betygsatt`}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

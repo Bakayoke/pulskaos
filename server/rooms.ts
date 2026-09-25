@@ -83,6 +83,7 @@ export function hydrateRooms(list: Room[]) {
     if (!r.lastMults) r.lastMults = {}
     if (!r.banner) r.banner = null
     if (!r.rematch) r.rematch = null
+    if (!r.lobbyReady) r.lobbyReady = {}
     for (const p of r.players) {
       if (typeof p.playing !== 'boolean') p.playing = !p.host
     }
@@ -191,6 +192,7 @@ export function createRoom(
     lastMults: {},
     banner: null,
     rematch: null,
+    lobbyReady: {},
   }
 
   rooms.set(code, room)
@@ -301,6 +303,7 @@ export function setHostPlaying(code: string, playerId: string, playing: boolean)
   const host = room.players.find((p) => p.id === playerId)
   if (!host) return { error: 'Host saknas' }
   host.playing = playing
+  if (!playing) delete room.lobbyReady[playerId]
   touch(room)
   return { room }
 }
@@ -322,7 +325,39 @@ export function startGame(code: string, playerId: string) {
   if (room.hostId !== playerId) return { error: 'Bara hosten kan starta' }
   if (room.status !== 'lobby') return { error: 'Spelet har startat' }
   if (activePlayers(room).length < 1) return { error: 'Behöver minst 1 spelare (host kan bara TV:a)' }
+  beginNight(room)
+  touch(room)
+  return { room }
+}
 
+function lobbyReadyNeed(room: Room) {
+  const n = activePlayers(room).length
+  return Math.max(1, Math.ceil(n / 2))
+}
+
+/** Playing players tap Redo — majority starts without host. */
+export function voteLobbyReady(code: string, playerId: string) {
+  const room = getRoom(code)
+  if (!room) return { error: 'Rummet finns inte' }
+  if (room.status !== 'lobby') return { error: 'Spelet har startat' }
+  const player = room.players.find((p) => p.id === playerId)
+  if (!player?.playing) return { error: 'Bara spelare kan vara redo — TV tittar' }
+  if (activePlayers(room).length < 1) return { error: 'Behöver minst 1 spelare' }
+
+  room.lobbyReady[playerId] = true
+  touch(room)
+
+  const votes = Object.keys(room.lobbyReady).filter((id) =>
+    activePlayers(room).some((p) => p.id === id),
+  ).length
+  if (votes >= lobbyReadyNeed(room)) {
+    beginNight(room)
+    touch(room)
+  }
+  return { room }
+}
+
+function beginNight(room: Room) {
   for (const p of room.players) {
     p.score = 0
     p.streak = 0
@@ -342,10 +377,9 @@ export function startGame(code: string, playerId: string) {
   room.revealUntil = null
   room.lastMults = {}
   room.rematch = null
+  room.lobbyReady = {}
   pickSaboteur(room)
   beginPulse(room, room.heat >= 5 ? 'finale' : 'warmup')
-  touch(room)
-  return { room }
 }
 
 function beginPulse(room: Room, kind: 'warmup' | 'bridge' | 'finale') {
@@ -969,6 +1003,18 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
         }
       : null
 
+  const readyVotes = Object.keys(room.lobbyReady ?? {}).filter((id) =>
+    activePlayers(room).some((p) => p.id === id),
+  )
+  const lobbyReady =
+    room.status === 'lobby'
+      ? {
+          voteCount: readyVotes.length,
+          need: lobbyReadyNeed(room),
+          youReady: viewerId ? Boolean(room.lobbyReady?.[viewerId]) : false,
+        }
+      : null
+
   return {
     code: room.code,
     status: room.status,
@@ -1003,5 +1049,6 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
     banner,
     yourStreak: you?.streak ?? 0,
     rematch,
+    lobbyReady,
   }
 }

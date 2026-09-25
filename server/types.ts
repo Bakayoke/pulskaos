@@ -60,6 +60,8 @@ export type BlitzState = {
   correctIndex: number
   endsAt: number
   answers: Record<string, { index: number; at: number }>
+  /** Index of option replaced by an Echo miss (klassisk fälla) */
+  echoTrapIndex: number | null
 }
 
 export type SmsState = {
@@ -173,6 +175,8 @@ export type Room = {
   lastMults: Record<string, number>
   banner: RoomBanner | null
   rematch: RematchState | null
+  /** Lobby ready votes (playing players) — majority starts the night */
+  lobbyReady: Record<string, boolean>
 }
 
 export type RevealPayload = {
@@ -240,6 +244,11 @@ export type PublicRoom = {
     need: number
     youVoted: boolean
   } | null
+  lobbyReady: {
+    voteCount: number
+    need: number
+    youReady: boolean
+  } | null
 }
 
 export type PublicMicro =
@@ -251,6 +260,7 @@ export type PublicMicro =
       yourAnswer: number | null
       answeredCount: number
       correctIndex: number | null
+      echoTrapIndex: number | null
     }
   | {
       kind: 'sms'
@@ -276,6 +286,8 @@ export type PublicMicro =
       guessTarget: { authorId: string; emoji: string } | null
       yourGuess: string | null
       guessCount: number
+      /** TV parade / spectator view of submitted emojis */
+      crowdEmojis: { id: string; name: string; emoji: string }[] | null
     }
   | {
       kind: 'klotter'

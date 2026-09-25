@@ -1097,6 +1097,71 @@ textarea {
   opacity: 0.7;
 }
 
+.option.static {
+  cursor: default;
+  pointer-events: none;
+}
+
+.option.echo-trap.hit {
+  border-color: rgba(255, 59, 92, 0.65);
+  background: rgba(255, 59, 92, 0.12);
+  animation: chaosShake 0.35s ease 3;
+}
+
+.trap-tag {
+  display: block;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ff6b8a;
+  margin-bottom: 0.25rem;
+}
+
+.emoji-parade {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  margin: 0.75rem 0;
+}
+
+.emoji-parade-item {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.emoji-huge {
+  font-size: clamp(3rem, 12vw, 5.5rem);
+  line-height: 1;
+}
+
+.fighter-fallback {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.35rem;
+  background: rgba(214, 255, 63, 0.12);
+  border: 1px solid rgba(214, 255, 63, 0.35);
+  color: var(--accent);
+}
+
+.tv-options {
+  width: min(100%, 640px);
+  margin: 0 auto;
+}
+
+.tv-sms-votes {
+  width: min(100%, 720px);
+  margin: 0.5rem auto 0;
+}
+
 .sms-card {
   display: grid;
   gap: 0.35rem;

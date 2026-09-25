@@ -63,10 +63,19 @@ export function createMicro(
   if (kind === 'blitz') {
     const q = pickBlitz(room.language, usedBlitz)
     const options = [...q.options]
+    let echoTrapIndex: number | null = null
     const echoWrong = [...room.echo.wrongGuesses, ...room.echo.emojiFails]
     if (echoWrong.length && options.length >= 4) {
       const guess = echoWrong[echoWrong.length - 1]!
-      if (!options.includes(guess)) options[3] = guess.slice(0, 40)
+      if (!options.includes(guess) && q.correctIndex !== 3) {
+        options[3] = guess.slice(0, 40)
+        echoTrapIndex = 3
+      } else if (!options.includes(guess)) {
+        // Correct is slot 3 — swap into a wrong slot
+        const slot = [0, 1, 2].find((i) => i !== q.correctIndex) ?? 0
+        options[slot] = guess.slice(0, 40)
+        echoTrapIndex = slot
+      }
     }
     return {
       kind: 'blitz',
@@ -76,6 +85,7 @@ export function createMicro(
         correctIndex: q.correctIndex,
         endsAt: now + (room.heat >= 4 ? 7000 : 9000),
         answers: {},
+        echoTrapIndex,
       },
     }
   }
@@ -201,6 +211,7 @@ export function toPublicMicro(room: Room, viewerId?: string): PublicMicro | null
       yourAnswer: viewerId ? b.answers[viewerId]?.index ?? null : null,
       answeredCount: Object.keys(b.answers).length,
       correctIndex: room.status === 'reveal' ? b.correctIndex : null,
+      echoTrapIndex: b.echoTrapIndex ?? null,
     }
   }
 
@@ -237,6 +248,14 @@ export function toPublicMicro(room: Room, viewerId?: string): PublicMicro | null
   if (m.kind === 'emoji') {
     const e = m.emoji
     const authorId = viewerId ? e.assignments[viewerId] : null
+    const crowdEmojis =
+      Object.keys(e.emojis).length > 0
+        ? Object.entries(e.emojis).map(([id, emoji]) => ({
+            id,
+            name: room.players.find((p) => p.id === id)?.name ?? '???',
+            emoji,
+          }))
+        : null
     return {
       kind: 'emoji',
       endsAt: e.endsAt,
@@ -250,6 +269,7 @@ export function toPublicMicro(room: Room, viewerId?: string): PublicMicro | null
           : null,
       yourGuess: viewerId ? e.guesses[viewerId] ?? null : null,
       guessCount: Object.keys(e.guesses).length,
+      crowdEmojis,
     }
   }
 
@@ -369,14 +389,35 @@ export function resolveBlitz(room: Room, reveal: RevealFn) {
     deltas[p.id] = delta
   }
 
+  const trapHits = living(room).filter(
+    (p) =>
+      blitz.echoTrapIndex != null &&
+      blitz.answers[p.id]?.index === blitz.echoTrapIndex,
+  )
+  const lines = [
+    room.language === 'sv'
+      ? `Rätt: ${blitz.options[blitz.correctIndex]}`
+      : `Correct: ${blitz.options[blitz.correctIndex]}`,
+  ]
+  if (trapHits.length && blitz.echoTrapIndex != null) {
+    const trap = blitz.options[blitz.echoTrapIndex]!
+    lines.push(
+      room.language === 'sv'
+        ? `Echo-fälla “${trap}” lurade ${trapHits.map((p) => p.name).join(', ')}`
+        : `Echo trap “${trap}” got ${trapHits.map((p) => p.name).join(', ')}`,
+    )
+  }
+
   reveal(room, {
     title: room.language === 'sv' ? 'Blitzfakta' : 'Blitz facts',
-    lines: [
-      room.language === 'sv'
-        ? `Rätt: ${blitz.options[blitz.correctIndex]}`
-        : `Correct: ${blitz.options[blitz.correctIndex]}`,
-    ],
+    lines,
     scores: scoreRows(room, deltas),
+    drama:
+      trapHits.length > 0
+        ? room.language === 'sv'
+          ? 'Klassisk miss slog tillbaka!'
+          : 'Classic miss struck back!'
+        : null,
   })
 }
 
