@@ -13,6 +13,7 @@ export type SmsPhase = 'write' | 'sabotage' | 'vote'
 export type EmojiPhase = 'emoji' | 'guess'
 export type KlotterPhase = 'draw' | 'vote'
 export type LivePhase = 'play' | 'score'
+export type ArenaPhase = 'draw' | 'fight'
 
 export type Player = {
   id: string
@@ -103,8 +104,11 @@ export type ArenaFighter = {
 }
 
 export type ArenaState = {
+  phase: ArenaPhase
   endsAt: number
   startedAt: number
+  prompt: string
+  drawings: Record<string, StrokePoint[][]>
   fighters: Record<string, ArenaFighter>
 }
 
@@ -305,6 +309,10 @@ export type PublicMicro =
       kind: 'arena'
       endsAt: number
       startedAt: number
+      phase: ArenaPhase
+      prompt: string
+      yourDrawing: StrokePoint[][] | null
+      drawCount: number
       fighters: {
         id: string
         name: string

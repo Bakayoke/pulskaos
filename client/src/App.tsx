@@ -373,7 +373,7 @@ function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => void }
         <li>Sms</li>
         <li>Emoji</li>
         <li>Klotter</li>
-        <li>Arena</li>
+        <li>Kludd</li>
         <li>Labb</li>
         <li>Live</li>
       </ul>

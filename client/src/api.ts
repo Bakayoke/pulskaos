@@ -114,6 +114,8 @@ export const klotterSubmit = (strokes: { x: number; y: number }[][]) =>
   emitAck('klotterSubmit', { strokes })
 export const klotterVote = (targetId: string) => emitAck('klotterVote', { targetId })
 export const arenaPunch = () => emitAck('arenaPunch')
+export const arenaSubmit = (strokes: { x: number; y: number }[][]) =>
+  emitAck('arenaSubmit', { strokes })
 export const labbTap = (step: string) =>
   emitAck<{ ok?: boolean; correct?: boolean; error?: string }>('labbTap', { step })
 export const liveDone = (write?: string) => emitAck('liveDone', { write })

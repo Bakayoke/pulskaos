@@ -1,5 +1,6 @@
 import {
   LABB_STEPS,
+  pickArenaPrompt,
   pickBlitz,
   pickEmojiWord,
   pickKlotterWord,
@@ -152,8 +153,11 @@ export function createMicro(
     return {
       kind: 'arena',
       arena: {
-        endsAt: now + 28_000,
+        phase: 'draw',
+        endsAt: now + 16_000,
         startedAt: now,
+        prompt: pickArenaPrompt(room.language),
+        drawings: {},
         fighters,
       },
     }
@@ -302,13 +306,17 @@ export function toPublicMicro(room: Room, viewerId?: string): PublicMicro | null
       kind: 'arena',
       endsAt: a.endsAt,
       startedAt: a.startedAt,
+      phase: a.phase,
+      prompt: a.prompt,
+      yourDrawing: viewerId ? a.drawings[viewerId] ?? null : null,
+      drawCount: Object.keys(a.drawings).length,
       fighters: Object.values(a.fighters).map((f) => ({
         id: f.id,
         name: room.players.find((p) => p.id === f.id)?.name ?? '???',
         x: f.x,
         hp: f.hp,
         punches: f.punches,
-        avatar: room.echo.avatars[f.id] ?? null,
+        avatar: a.drawings[f.id] ?? room.echo.avatars[f.id] ?? null,
       })),
       yourPunches: viewerId ? a.fighters[viewerId]?.punches ?? 0 : 0,
     }
@@ -530,24 +538,45 @@ export function resolveKlotter(room: Room, reveal: RevealFn) {
 export function resolveArena(room: Room, reveal: RevealFn) {
   if (room.micro?.kind !== 'arena') return
   const a = room.micro.arena
+  // Persist doodles as echo avatars for the night
+  for (const [id, strokes] of Object.entries(a.drawings)) {
+    if (strokes.length) room.echo.avatars[id] = strokes
+  }
   const deltas: Record<string, number> = {}
   for (const p of living(room)) {
     const f = a.fighters[p.id]
     const punches = f?.punches ?? 0
-    const delta = Math.round(punches * 18 * (room.lastMults[p.id] ?? 1))
+    const drew = Boolean(a.drawings[p.id]?.length)
+    const inkBonus = drew ? 120 : 0
+    const delta = Math.round((punches * 18 + inkBonus) * (room.lastMults[p.id] ?? 1))
     applyDelta(room, p.id, delta)
     deltas[p.id] = delta
   }
   const top = Object.values(a.fighters).sort((x, y) => y.punches - x.punches)[0]
   if (top) {
     const name = room.players.find((p) => p.id === top.id)?.name
-    if (name) room.echo.highlights.push(`Arena-burst: ${name} dunkade mest`)
+    if (name) room.echo.highlights.push(`Kludd-burst: ${name} dunkade mest`)
   }
   reveal(room, {
-    title: 'Arena-burst',
-    lines: ['Punch-race med dina Echo-avatars'],
+    title: room.language === 'sv' ? 'Kludd-burst' : 'Doodle burst',
+    lines: [
+      a.prompt,
+      room.language === 'sv' ? 'Rita → dunka med din doodle' : 'Draw → punch with your doodle',
+    ],
     scores: scoreRows(room, deltas),
   })
+}
+
+export function enterArenaFight(room: Room) {
+  if (room.micro?.kind !== 'arena') return
+  const a = room.micro.arena
+  if (a.phase !== 'draw') return
+  a.phase = 'fight'
+  a.startedAt = Date.now()
+  a.endsAt = Date.now() + 18_000
+  for (const [id, strokes] of Object.entries(a.drawings)) {
+    if (strokes.length) room.echo.avatars[id] = strokes
+  }
 }
 
 export function resolveLabb(room: Room, reveal: RevealFn) {

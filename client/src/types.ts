@@ -11,6 +11,7 @@ export type SmsPhase = 'write' | 'sabotage' | 'vote'
 export type EmojiPhase = 'emoji' | 'guess'
 export type KlotterPhase = 'draw' | 'vote'
 export type LivePhase = 'play' | 'score'
+export type ArenaPhase = 'draw' | 'fight'
 export type PulseHitGrade = 'perfect' | 'good' | 'almost' | 'early' | 'late' | 'miss'
 export type StrokePoint = { x: number; y: number }
 
@@ -91,6 +92,10 @@ export type PublicMicro =
       kind: 'arena'
       endsAt: number
       startedAt: number
+      phase: ArenaPhase
+      prompt: string
+      yourDrawing: StrokePoint[][] | null
+      drawCount: number
       fighters: {
         id: string
         name: string

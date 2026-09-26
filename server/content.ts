@@ -113,6 +113,29 @@ export function pickLive(lang: 'sv' | 'en') {
   return bank[Math.floor(Math.random() * bank.length)]!
 }
 
+const ARENA_PROMPTS_SV = [
+  'Rita din fighter',
+  'Rita ett monster',
+  'Rita en hjälte',
+  'Rita din rival',
+  'Rita en kaos-robot',
+  'Rita dig själv som boss',
+]
+
+const ARENA_PROMPTS_EN = [
+  'Draw your fighter',
+  'Draw a monster',
+  'Draw a hero',
+  'Draw your rival',
+  'Draw a chaos robot',
+  'Draw yourself as a boss',
+]
+
+export function pickArenaPrompt(lang: 'sv' | 'en'): string {
+  const bank = lang === 'sv' ? ARENA_PROMPTS_SV : ARENA_PROMPTS_EN
+  return bank[Math.floor(Math.random() * bank.length)]!
+}
+
 const ALL_KINDS: MicroKind[] = ['blitz', 'sms', 'emoji', 'klotter', 'arena', 'labb', 'live']
 
 export function buildSchedule(heat: number): MicroKind[] {

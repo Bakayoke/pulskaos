@@ -35,6 +35,7 @@ import {
   submitKlotter,
   submitKlotterVote,
   arenaPunch,
+  submitArenaDrawing,
   labbTap,
   liveDone,
   liveScore,
@@ -303,6 +304,16 @@ io.on('connection', (socket) => {
     const binding = getBinding(socket.id)
     if (!binding) return ack?.({ error: 'Inte ansluten' })
     const result = arenaPunch(binding.code, binding.playerId)
+    if ('error' in result) return ack?.({ error: result.error })
+    ack?.({ ok: true })
+    broadcastRoom(binding.code)
+  })
+
+  socket.on('arenaSubmit', (data, ack) => {
+    const binding = getBinding(socket.id)
+    if (!binding) return ack?.({ error: 'Inte ansluten' })
+    const strokes = Array.isArray(data?.strokes) ? data.strokes : []
+    const result = submitArenaDrawing(binding.code, binding.playerId, strokes)
     if ('error' in result) return ack?.({ error: result.error })
     ack?.({ ok: true })
     broadcastRoom(binding.code)

@@ -8,6 +8,7 @@ import {
   enterLiveScore,
   enterSmsSabotage,
   enterSmsVote,
+  enterArenaFight,
   finalizeLiveScores,
   liveVotingComplete,
   resolveArena,
@@ -93,6 +94,11 @@ export function hydrateRooms(list: Room[]) {
       if (r.pulse.chaosUntil === undefined) r.pulse.chaosUntil = null
     }
     if (r.micro?.kind === 'live' && !r.micro.live.votes) r.micro.live.votes = {}
+    if (r.micro?.kind === 'arena') {
+      if (!r.micro.arena.phase) r.micro.arena.phase = 'fight'
+      if (!r.micro.arena.drawings) r.micro.arena.drawings = {}
+      if (!r.micro.arena.prompt) r.micro.arena.prompt = 'Rita din fighter'
+    }
     rooms.set(r.code, r)
   }
 }
@@ -772,11 +778,27 @@ export function submitKlotterVote(code: string, playerId: string, targetId: stri
   return { ok: true }
 }
 
+export function submitArenaDrawing(code: string, playerId: string, strokes: StrokePoint[][]) {
+  const room = getRoom(code)
+  if (!room || room.status !== 'micro' || room.micro?.kind !== 'arena') return { error: 'Ingen arena' }
+  if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
+  const a = room.micro.arena
+  if (a.phase !== 'draw') return { error: 'Fel fas' }
+  a.drawings[playerId] = clampStrokes(strokes)
+  touch(room)
+  if (Object.keys(a.drawings).length >= activePlayers(room).length) {
+    enterArenaFight(room)
+    touch(room)
+  }
+  return { ok: true }
+}
+
 export function arenaPunch(code: string, playerId: string) {
   const room = getRoom(code)
   if (!room || room.status !== 'micro' || room.micro?.kind !== 'arena') return { error: 'Ingen arena' }
   if (!room.players.find((p) => p.id === playerId)?.playing) return { error: 'Du hostar bara' }
   const a = room.micro.arena
+  if (a.phase !== 'fight') return { error: 'Rita först' }
   const me = a.fighters[playerId]
   if (!me || me.hp <= 0) return { error: 'K.O.' }
   me.punches += 1
@@ -909,8 +931,13 @@ export function tickRooms(): string[] {
           dirty = true
         }
       } else if (m.kind === 'arena' && now >= m.arena.endsAt) {
-        resolveArena(room, dramaReveal(room))
-        dirty = true
+        if (m.arena.phase === 'draw') {
+          enterArenaFight(room)
+          dirty = true
+        } else {
+          resolveArena(room, dramaReveal(room))
+          dirty = true
+        }
       } else if (m.kind === 'labb' && now >= m.labb.endsAt) {
         resolveLabb(room, dramaReveal(room))
         dirty = true

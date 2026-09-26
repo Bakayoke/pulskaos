@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   arenaPunch,
+  arenaSubmit,
   blitzAnswer,
   emojiGuess,
   emojiSubmit,
@@ -228,7 +229,9 @@ function TvMicroMirror({ room }: { room: PublicRoom }) {
               ? 'Sabotage-klotter · Rösta'
               : 'Sabotage-klotter · Rita'
             : micro.kind === 'arena'
-              ? 'Arena-burst'
+              ? micro.phase === 'draw'
+                ? 'Kludd-burst · Rita'
+                : 'Kludd-burst · Dunka'
               : micro.kind === 'labb'
                 ? 'Labbpuls'
                 : micro.phase === 'score'
@@ -242,7 +245,7 @@ function TvMicroMirror({ room }: { room: PublicRoom }) {
     body = null // shown as parade
   if (micro.kind === 'live') body = micro.challenge
   if (micro.kind === 'labb') body = micro.recipe.join(' → ')
-  if (micro.kind === 'arena') body = 'Dunka på mobilen!'
+  if (micro.kind === 'arena') body = micro.phase === 'draw' ? micro.prompt : null
   if (micro.kind === 'klotter' && micro.phase === 'draw') body = 'Rita på mobilen'
 
   return (
@@ -311,7 +314,12 @@ function TvMicroMirror({ room }: { room: PublicRoom }) {
         </>
       )}
 
-      {micro.kind === 'arena' && (
+      {micro.kind === 'arena' && micro.phase === 'draw' && (
+        <p className="muted ready-count">
+          {micro.drawCount}/{room.playingCount} ritat
+        </p>
+      )}
+      {micro.kind === 'arena' && micro.phase === 'fight' && (
         <div className="arena-stage tv-arena">
           {micro.fighters.map((f) => (
             <div key={f.id} className="fighter" style={{ left: `${f.x}%` }}>
@@ -546,29 +554,56 @@ function ArenaView({ room }: { room: PublicRoom }) {
   if (micro.kind !== 'arena') return null
   return (
     <section className="play">
-      <p className="eyebrow">Arena-burst</p>
-      <Timer endsAt={micro.endsAt} serverNow={room.serverNow} total={28000} />
-      <div className="arena-stage">
-        {micro.fighters.map((f) => (
-          <div key={f.id} className="fighter" style={{ left: `${f.x}%` }}>
-            <MiniDoodle strokes={f.avatar ?? []} />
-            <div className="hp">
-              <div style={{ width: `${f.hp}%` }} />
-            </div>
-            <span>{f.name}</span>
+      <p className="eyebrow">
+        Kludd-burst · {micro.phase === 'draw' ? 'Rita' : 'Dunka'}
+      </p>
+      <Timer
+        endsAt={micro.endsAt}
+        serverNow={room.serverNow}
+        total={micro.phase === 'draw' ? 16000 : 18000}
+      />
+      <h2 className="prompt">{micro.prompt}</h2>
+      {micro.phase === 'draw' && (
+        <>
+          {micro.yourDrawing ? (
+            <p className="locked">Klar — väntar på övriga.</p>
+          ) : (
+            <DrawPad orbActive={false} onSubmit={(s) => void arenaSubmit(s)} />
+          )}
+          <p className="muted ready-count">
+            {micro.drawCount}/{room.playingCount} ritat
+          </p>
+        </>
+      )}
+      {micro.phase === 'fight' && (
+        <>
+          <div className="arena-stage">
+            {micro.fighters.map((f) => (
+              <div key={f.id} className="fighter" style={{ left: `${f.x}%` }}>
+                {f.avatar && f.avatar.length > 0 ? (
+                  <MiniDoodle strokes={f.avatar} shake={f.hp < 40} />
+                ) : (
+                  <div className="fighter-fallback">{f.name.slice(0, 2).toUpperCase()}</div>
+                )}
+                <div className="hp">
+                  <div style={{ width: `${f.hp}%` }} />
+                </div>
+                <span>{f.name}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        className="btn primary punch-btn"
-        onPointerDown={(e) => {
-          e.preventDefault()
-          void arenaPunch()
-        }}
-      >
-        DUNKA · {micro.yourPunches}
-      </button>
+          <button
+            type="button"
+            className="btn primary punch-btn"
+            onPointerDown={(e) => {
+              e.preventDefault()
+              void arenaPunch()
+            }}
+          >
+            DUNKA · {micro.yourPunches}
+          </button>
+        </>
+      )}
     </section>
   )
 }
