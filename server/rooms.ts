@@ -336,31 +336,69 @@ export function startGame(code: string, playerId: string) {
   return { room }
 }
 
-function lobbyReadyNeed(room: Room) {
-  const n = activePlayers(room).length
-  return Math.max(1, Math.ceil(n / 2))
-}
-
-/** Playing players tap Redo — majority starts without host. */
-export function voteLobbyReady(code: string, playerId: string) {
+/** Host aborts night and reopens lobby so others can join. */
+export function backToLobby(code: string, playerId: string) {
   const room = getRoom(code)
   if (!room) return { error: 'Rummet finns inte' }
-  if (room.status !== 'lobby') return { error: 'Spelet har startat' }
-  const player = room.players.find((p) => p.id === playerId)
-  if (!player?.playing) return { error: 'Bara spelare kan vara redo — TV tittar' }
-  if (activePlayers(room).length < 1) return { error: 'Behöver minst 1 spelare' }
+  if (room.hostId !== playerId) return { error: 'Bara hosten' }
+  if (room.status === 'lobby') return { room }
 
-  room.lobbyReady[playerId] = true
-  touch(room)
-
-  const votes = Object.keys(room.lobbyReady).filter((id) =>
-    activePlayers(room).some((p) => p.id === id),
-  ).length
-  if (votes >= lobbyReadyNeed(room)) {
-    beginNight(room)
-    touch(room)
+  room.status = 'lobby'
+  room.pulse = null
+  room.micro = null
+  room.currentMicro = null
+  room.round = 0
+  room.totalRounds = 0
+  room.schedule = []
+  room.lastReveal = null
+  room.revealUntil = null
+  room.banner = null
+  room.rematch = null
+  room.lobbyReady = {}
+  room.saboteurId = null
+  room.saboteurCharges = 0
+  room.lastMults = {}
+  for (const p of room.players) {
+    p.score = 0
+    p.streak = 0
   }
+  setBanner(room, 'Tillbaka till lobby', 'info', 2200)
+  touch(room)
   return { room }
+}
+
+/** Leave room immediately (any status). */
+export function leaveRoom(code: string, playerId: string) {
+  const room = getRoom(code)
+  if (!room) return { error: 'Rummet finns inte' }
+  const player = room.players.find((p) => p.id === playerId)
+  if (!player) return { error: 'Spelare saknas' }
+
+  if (player.socketId) socketToPlayer.delete(player.socketId)
+  const key = `${room.code}:${playerId}`
+  const timer = disconnectTimers.get(key)
+  if (timer) {
+    clearTimeout(timer)
+    disconnectTimers.delete(key)
+  }
+
+  room.players = room.players.filter((p) => p.id !== playerId)
+  delete room.lobbyReady[playerId]
+
+  if (!room.players.length) {
+    rooms.delete(room.code)
+    usedBlitz.delete(room.code)
+    return { ok: true, empty: true as const }
+  }
+
+  if (room.hostId === playerId) {
+    const next = room.players[0]!
+    next.host = true
+    room.hostId = next.id
+  }
+
+  touch(room)
+  return { ok: true, empty: false as const, room }
 }
 
 function beginNight(room: Room) {
@@ -1030,18 +1068,6 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
         }
       : null
 
-  const readyVotes = Object.keys(room.lobbyReady ?? {}).filter((id) =>
-    activePlayers(room).some((p) => p.id === id),
-  )
-  const lobbyReady =
-    room.status === 'lobby'
-      ? {
-          voteCount: readyVotes.length,
-          need: lobbyReadyNeed(room),
-          youReady: viewerId ? Boolean(room.lobbyReady?.[viewerId]) : false,
-        }
-      : null
-
   return {
     code: room.code,
     status: room.status,
@@ -1076,6 +1102,5 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
     banner,
     yourStreak: you?.streak ?? 0,
     rematch,
-    lobbyReady,
   }
 }

@@ -93,7 +93,8 @@ export async function rejoinGame() {
 }
 
 export const startGame = () => emitAck('start')
-export const lobbyReady = () => emitAck('lobbyReady')
+export const backToLobby = () => emitAck('backToLobby')
+export const leaveGame = () => emitAck('leave')
 export const rematchGame = () => emitAck('voteRematch')
 export const voteRematch = () => emitAck('voteRematch')
 export const setLanguage = (language: 'sv' | 'en') => emitAck('setLanguage', { language })

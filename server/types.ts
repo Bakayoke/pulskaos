@@ -248,11 +248,6 @@ export type PublicRoom = {
     need: number
     youVoted: boolean
   } | null
-  lobbyReady: {
-    voteCount: number
-    need: number
-    youReady: boolean
-  } | null
 }
 
 export type PublicMicro =
