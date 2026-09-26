@@ -386,7 +386,7 @@ function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => void }
 const SISTER_GAMES = [
   { name: 'Factopia', href: 'https://factopia.net', hint: 'Blixtquiz' },
   { name: 'Klotterkaos', href: 'https://klotterkaos.com', hint: 'Rita & sabba' },
-  { name: 'Kluddkrig', href: 'https://kluddkrig.com', hint: 'Doodle-fight' },
+  { name: 'Kluddkrig', href: 'https://kluddkrig.com', hint: 'Rita · sabba · gissa' },
   { name: 'Party Paths', href: 'https://partypaths.com', hint: 'Emoji-visklek' },
   { name: 'Sabotext', href: 'https://sabotext.com', hint: 'SMS-kupp' },
   { name: 'Your Task Is', href: 'https://yourtaskis.com', hint: 'Live-utmaning' },
