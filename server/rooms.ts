@@ -28,6 +28,7 @@ import {
   pulsePoints,
 } from './pulse.js'
 import type { EchoBag, Player, PublicRoom, RevealPayload, Room, RoomBanner, StrokePoint } from './types.js'
+import { recordGameStart } from './stats.js'
 
 const codeAlpha = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ', 4)
 const idAlpha = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 10)
@@ -424,6 +425,7 @@ function beginNight(room: Room) {
   room.lobbyReady = {}
   pickSaboteur(room)
   beginPulse(room, room.heat >= 5 ? 'finale' : 'warmup')
+  void recordGameStart()
 }
 
 function beginPulse(room: Room, kind: 'warmup' | 'bridge' | 'finale') {
@@ -518,6 +520,7 @@ function startRematchNight(room: Room) {
   setBanner(room, `Heat ${room.heat} — kör!`, 'info', 2200)
   beginPulse(room, room.heat >= 5 ? 'finale' : 'warmup')
   if (room.heat >= 5) setBanner(room, 'HEAT 5 — RENT PULSE-OFF', 'finale', 3500)
+  void recordGameStart()
 }
 
 export function rematch(code: string, playerId: string) {

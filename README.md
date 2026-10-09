@@ -36,8 +36,23 @@ npm run dev
 1. Nytt projekt från GitHub
 2. Lägg till Redis → `REDIS_URL`
 3. Variabler: `PUBLIC_APP_URL=https://pulskaos.com`, `CORS_ORIGIN=https://pulskaos.com,https://www.pulskaos.com`
-4. Sätt `VITE_SOCKET_URL` till Railway-URL i `client/.env.production` före client-build
-5. Verifiera: `GET /api/health`
+4. Sätt `ADMIN_STATS_TOKEN` (lång hemlig sträng) för admin-statistik
+5. Sätt `VITE_SOCKET_URL` till Railway-URL i `client/.env.production` före client-build
+6. Verifiera: `GET /api/health`
+
+### Admin-statistik (startade spel per dag)
+
+Räknar varje nattstart + rematch. Sparas i Redis (eller fil om `PULSKAOS_DATA_DIR`).
+
+```bash
+# JSON
+curl -s "https://DIN-RAILWAY-URL/api/admin/stats?token=DIN_TOKEN"
+
+# Enkel HTML-sida i webbläsaren
+open "https://DIN-RAILWAY-URL/api/admin/stats?token=DIN_TOKEN&format=html"
+```
+
+Eller header: `Authorization: Bearer DIN_TOKEN` / `X-Admin-Token: DIN_TOKEN`.
 
 ### Cloudflare (frontend)
 

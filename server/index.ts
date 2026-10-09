@@ -11,6 +11,12 @@ import {
   scheduleSave,
 } from './persist.js'
 import {
+  adminTokenOk,
+  getStatsSnapshot,
+  initStats,
+  renderStatsHtml,
+} from './stats.js'
+import {
   allRooms,
   createRoom,
   disconnectSocket,
@@ -77,6 +83,32 @@ app.get('/api/health', (_req, res) => {
     rooms: allRooms().size,
     persist: persistStatus(),
   })
+})
+
+app.get('/api/admin/stats', async (req, res) => {
+  const token =
+    (typeof req.query.token === 'string' && req.query.token) ||
+    (typeof req.headers['x-admin-token'] === 'string' && req.headers['x-admin-token']) ||
+    (req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : null)
+  if (!adminTokenOk(token)) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+  if (!process.env.ADMIN_STATS_TOKEN?.trim()) {
+    res.status(503).json({ error: 'ADMIN_STATS_TOKEN not configured' })
+    return
+  }
+  const snap = await getStatsSnapshot()
+  const wantsHtml =
+    req.query.format === 'html' ||
+    (typeof req.headers.accept === 'string' && req.headers.accept.includes('text/html'))
+  if (wantsHtml) {
+    res.type('html').send(renderStatsHtml(snap))
+    return
+  }
+  res.json(snap)
 })
 
 const dist = path.join(__dirname, '../client/dist')
@@ -374,6 +406,8 @@ setInterval(() => {
 async function boot() {
   const persist = await initPersist()
   console.log('Persist:', persist)
+  const stats = await initStats()
+  console.log('Stats:', stats)
   const snap = await loadSnapshot()
   if (snap.rooms?.length) hydrateRooms(snap.rooms)
   httpServer.listen(PORT, () => {
