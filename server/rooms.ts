@@ -38,7 +38,8 @@ const socketToPlayer = new Map<string, { code: string; playerId: string }>()
 const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const usedBlitz = new Map<string, Set<string>>()
 
-const DISCONNECT_GRACE_MS = 60_000
+/** How long a dropped socket keeps the seat before lobby prune. */
+const DISCONNECT_GRACE_MS = 5 * 60_000
 const IDLE_MS = 12 * 60 * 60 * 1000
 
 let persistHook: (() => void) | null = null
@@ -52,12 +53,14 @@ function touch(room: Room) {
   persistHook?.()
 }
 
+/** Contestants still in the night — connection blips must not shrink this. */
 function living(room: Room): Player[] {
-  return room.players.filter((p) => p.connected || p.socketId)
+  return room.players.filter((p) => p.playing)
 }
 
+/** Alias used for thresholds / saboteur / rematch (same as living). */
 function activePlayers(room: Room): Player[] {
-  return room.players.filter((p) => p.connected && p.playing)
+  return living(room)
 }
 
 function ensureUsed(code: string) {
@@ -88,6 +91,9 @@ export function hydrateRooms(list: Room[]) {
     if (!r.lobbyReady) r.lobbyReady = {}
     for (const p of r.players) {
       if (typeof p.playing !== 'boolean') p.playing = !p.host
+      // Sockets die with the process — never restore ghost "online" from Redis.
+      p.connected = false
+      p.socketId = null
     }
     if (r.pulse) {
       if (!r.pulse.lastGrades) r.pulse.lastGrades = {}
@@ -240,13 +246,22 @@ export function reconnectSocket(code: string, playerId: string, socketId: string
   const player = room.players.find((p) => p.id === playerId)
   if (!player) return { error: 'Spelare saknas' }
 
-  const oldKey = [...disconnectTimers.keys()].find((k) => k.endsWith(`:${playerId}`))
-  if (oldKey) {
-    clearTimeout(disconnectTimers.get(oldKey))
-    disconnectTimers.delete(oldKey)
+  const key = `${room.code}:${playerId}`
+  const pending = disconnectTimers.get(key)
+  if (pending) {
+    clearTimeout(pending)
+    disconnectTimers.delete(key)
   }
 
-  if (player.socketId) socketToPlayer.delete(player.socketId)
+  // Drop any stale binding for this socket or the player's previous socket.
+  const prev = socketToPlayer.get(socketId)
+  if (prev && (prev.code !== room.code || prev.playerId !== playerId)) {
+    socketToPlayer.delete(socketId)
+  }
+  if (player.socketId && player.socketId !== socketId) {
+    socketToPlayer.delete(player.socketId)
+  }
+
   player.socketId = socketId
   player.connected = true
   socketToPlayer.set(socketId, { code: room.code, playerId })
@@ -257,25 +272,42 @@ export function reconnectSocket(code: string, playerId: string, socketId: string
 export function disconnectSocket(socketId: string, onChange: (code: string) => void) {
   const binding = socketToPlayer.get(socketId)
   if (!binding) return
-  socketToPlayer.delete(socketId)
   const room = getRoom(binding.code)
-  if (!room) return
+  if (!room) {
+    socketToPlayer.delete(socketId)
+    return
+  }
   const player = room.players.find((p) => p.id === binding.playerId)
-  if (!player) return
+  if (!player) {
+    socketToPlayer.delete(socketId)
+    return
+  }
+
+  // A newer socket already claimed this seat — ignore the old disconnect.
+  if (player.socketId && player.socketId !== socketId) {
+    socketToPlayer.delete(socketId)
+    return
+  }
+
+  socketToPlayer.delete(socketId)
   player.connected = false
   player.socketId = null
   touch(room)
   onChange(room.code)
 
   const key = `${room.code}:${player.id}`
+  const existing = disconnectTimers.get(key)
+  if (existing) clearTimeout(existing)
+
   const timer = setTimeout(() => {
     disconnectTimers.delete(key)
     const r = getRoom(binding.code)
     if (!r) return
     const p = r.players.find((x) => x.id === binding.playerId)
-    if (!p || p.connected) return
+    if (!p || p.connected || p.socketId) return
     if (r.status === 'lobby') {
       r.players = r.players.filter((x) => x.id !== p.id)
+      delete r.lobbyReady[p.id]
       if (p.host && r.players.length) {
         r.players[0]!.host = true
         r.hostId = r.players[0]!.id
@@ -283,11 +315,27 @@ export function disconnectSocket(socketId: string, onChange: (code: string) => v
       if (!r.players.length) {
         rooms.delete(r.code)
         usedBlitz.delete(r.code)
+        onChange(r.code)
         return
       }
+      touch(r)
+      onChange(r.code)
+      return
     }
-    touch(r)
-    onChange(r.code)
+    // Mid-game: keep seat for scores, but pass host so the party isn't stuck.
+    if (p.host) {
+      const next =
+        r.players.find((x) => x.id !== p.id && x.connected) ??
+        r.players.find((x) => x.id !== p.id)
+      if (next) {
+        p.host = false
+        next.host = true
+        r.hostId = next.id
+        setBanner(r, `${next.name} tar över host`, 'info', 2400)
+        touch(r)
+        onChange(r.code)
+      }
+    }
   }, DISCONNECT_GRACE_MS)
   disconnectTimers.set(key, timer)
 }
@@ -337,13 +385,7 @@ export function startGame(code: string, playerId: string) {
   return { room }
 }
 
-/** Host aborts night and reopens lobby so others can join. */
-export function backToLobby(code: string, playerId: string) {
-  const room = getRoom(code)
-  if (!room) return { error: 'Rummet finns inte' }
-  if (room.hostId !== playerId) return { error: 'Bara hosten' }
-  if (room.status === 'lobby') return { room }
-
+function resetRoomToLobby(room: Room, bannerText: string) {
   room.status = 'lobby'
   room.pulse = null
   room.micro = null
@@ -363,8 +405,17 @@ export function backToLobby(code: string, playerId: string) {
     p.score = 0
     p.streak = 0
   }
-  setBanner(room, 'Tillbaka till lobby', 'info', 2200)
+  setBanner(room, bannerText, 'info', 2200)
   touch(room)
+}
+
+/** Host aborts night and reopens lobby so others can join. */
+export function backToLobby(code: string, playerId: string) {
+  const room = getRoom(code)
+  if (!room) return { error: 'Rummet finns inte' }
+  if (room.hostId !== playerId) return { error: 'Bara hosten' }
+  if (room.status === 'lobby') return { room }
+  resetRoomToLobby(room, 'Tillbaka till lobby')
   return { room }
 }
 
@@ -1013,7 +1064,8 @@ export function tickRooms(): string[] {
       if (votes >= rematchNeed(room)) {
         startRematchNight(room)
       } else {
-        room.rematch = null
+        // Don't leave the party stuck on a dead winner screen.
+        resetRoomToLobby(room, 'Tillbaka till lobby')
       }
       dirty = true
     }
@@ -1101,7 +1153,7 @@ export function toPublicRoom(room: Room, viewerId?: string): PublicRoom {
     lastReveal: room.lastReveal,
     language: room.language,
     serverNow: Date.now(),
-    playingCount: room.players.filter((p) => p.playing && p.connected).length,
+    playingCount: room.players.filter((p) => p.playing).length,
     banner,
     yourStreak: you?.streak ?? 0,
     rematch,

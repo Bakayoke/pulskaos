@@ -123,8 +123,13 @@ app.get('/{*splat}', (req, res, next) => {
 const httpServer = createServer(app)
 const io = new Server(httpServer, {
   cors: { origin: allowedOrigins, methods: ['GET', 'POST'] },
-  pingInterval: 10000,
-  pingTimeout: 20000,
+  // Mobile tabs sleep aggressively — keep the seat via client rejoin, not tiny pings.
+  pingInterval: 20000,
+  pingTimeout: 45000,
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000,
+    skipMiddlewares: true,
+  },
 })
 
 function broadcastRoom(code: string) {
@@ -218,10 +223,12 @@ io.on('connection', (socket) => {
   socket.on('leave', (_data, ack) => {
     const binding = getBinding(socket.id)
     if (!binding) return ack?.({ error: 'Inte ansluten' })
-    const result = leaveRoom(binding.code, binding.playerId)
+    const code = binding.code
+    const result = leaveRoom(code, binding.playerId)
     if ('error' in result) return ack?.({ error: result.error })
+    void socket.leave(code)
     ack?.({ ok: true })
-    if (!result.empty) broadcastRoom(binding.code)
+    if (!result.empty) broadcastRoom(code)
   })
 
   socket.on('rematch', (_data, ack) => {

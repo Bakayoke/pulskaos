@@ -17,12 +17,13 @@ import type {
   StrokePoint,
 } from './types.js'
 
+/** Contestants in the night — ignore brief disconnects for scoring / voting. */
 function active(room: Room): Player[] {
-  return room.players.filter((p) => p.connected && p.playing)
+  return room.players.filter((p) => p.playing)
 }
 
 function living(room: Room): Player[] {
-  return room.players.filter((p) => p.connected || p.socketId)
+  return active(room)
 }
 
 function rotateAssignments(ids: string[]): Record<string, string> {

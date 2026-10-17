@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import {
+  bindConnection,
   bindRoom,
   backToLobby,
   clearSession,
@@ -101,16 +102,24 @@ export default function App() {
   const [tvMode, setTvMode] = useState(false)
   const [startAsTv, setStartAsTv] = useState(true)
   const [fsActive, setFsActive] = useState(() => isFullscreenActive())
+  const [socketOk, setSocketOk] = useState(true)
   const hadFs = useRef(false)
 
   useEffect(() => {
     getSocket()
     bindRoom(setRoom)
+    bindConnection(setSocketOk)
     const params = new URLSearchParams(window.location.search)
-    const join = params.get('join')
+    const join = params.get('join')?.toUpperCase() ?? ''
     if (join) {
-      setCode(join.toUpperCase())
+      setCode(join)
       setScreen('join')
+      const existing = loadSession()
+      // Invite link wins over a stale party on another code.
+      if (existing && existing.code !== join) {
+        clearSession()
+        return
+      }
     }
     void rejoinGame().then((s) => {
       if (s) setScreen('play')
@@ -338,12 +347,16 @@ export default function App() {
             onLeave={() => {
               void leaveGame().finally(() => {
                 void disableTvMode()
-                clearSession()
                 setRoom(null)
                 setScreen('home')
               })
             }}
           />
+        )}
+        {screen === 'play' && !socketOk && (
+          <div className="reconnect-banner" role="status">
+            Återansluter till partyt…
+          </div>
         )}
       </main>
     </div>
@@ -545,9 +558,9 @@ function ScoreRail({ room }: { room: PublicRoom }) {
         {sorted.map((p, i) => (
           <li key={p.id} className={p.id === room.youId ? 'you' : ''}>
             <span className="rank">{i + 1}</span>
-            <span className="nm">
+            <span className={`nm${!p.connected ? ' offline' : ''}`}>
               {p.name}
-              {!p.connected && ' ·'}
+              {!p.connected ? ' · offline' : ''}
             </span>
             <span className="sc">{p.score}</span>
           </li>

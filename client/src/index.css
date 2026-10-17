@@ -706,6 +706,27 @@ textarea {
   color: var(--muted);
 }
 
+.reconnect-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  z-index: 80;
+  transform: translateX(-50%);
+  padding: 0.65rem 1.1rem;
+  border-radius: 999px;
+  background: rgba(18, 22, 32, 0.92);
+  border: 1px solid rgba(255, 196, 86, 0.45);
+  color: #ffd98a;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.score-rail .nm.offline {
+  opacity: 0.55;
+}
+
 .small {
   font-size: 0.88rem;
 }
