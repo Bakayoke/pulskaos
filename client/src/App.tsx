@@ -403,7 +403,24 @@ function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => void }
       </ul>
       <p className="sister-label">Fler party-spel</p>
       <SisterGames />
+      <FikaLink />
     </section>
+  )
+}
+
+const SWISH_FIKA =
+  'https://app.swish.nu/1/p/sw/?sw=46730457930&msg=' +
+  encodeURIComponent('Fika · Pulskaos') +
+  '&edit=amt,msg'
+
+function FikaLink({ compact }: { compact?: boolean } = {}) {
+  return (
+    <p className={`fika-wrap${compact ? ' compact' : ''}`}>
+      <a className="fika-link" href={SWISH_FIKA} target="_blank" rel="noreferrer">
+        Bjud på fika
+        <span>Swish</span>
+      </a>
+    </p>
   )
 }
 
@@ -1075,6 +1092,7 @@ function WinnerView({ room, onLeave }: { room: PublicRoom; onLeave: () => void }
 
       <p className="sister-label">Sug efter mer?</p>
       <SisterGames compact />
+      <FikaLink compact />
     </section>
   )
 }
