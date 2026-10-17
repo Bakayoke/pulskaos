@@ -8,6 +8,7 @@ type Session = { code: string; playerId: string; name: string }
 let socket: Socket | null = null
 let roomHandler: ((room: PublicRoom) => void) | null = null
 let connHandler: ((connected: boolean) => void) | null = null
+let sessionLostHandler: (() => void) | null = null
 let rejoinInFlight: Promise<Session | null> | null = null
 
 function socketUrl() {
@@ -23,6 +24,11 @@ function isGoneError(error: string) {
     e.includes('not found') ||
     e.includes('missing')
   )
+}
+
+function dropSession(notify = true) {
+  clearSession()
+  if (notify) sessionLostHandler?.()
 }
 
 export function getSocket() {
@@ -56,6 +62,10 @@ export function bindRoom(handler: (room: PublicRoom) => void) {
 export function bindConnection(handler: (connected: boolean) => void) {
   connHandler = handler
   handler(Boolean(socket?.connected))
+}
+
+export function bindSessionLost(handler: () => void) {
+  sessionLostHandler = handler
 }
 
 export function loadSession(): Session | null {
@@ -123,7 +133,7 @@ export async function ensureSessionBound(): Promise<Session | null> {
         playerId: session.playerId,
       })
       if (res.error) {
-        if (isGoneError(res.error)) clearSession()
+        if (isGoneError(res.error)) dropSession(true)
         return null
       }
       return session
@@ -138,7 +148,8 @@ export async function ensureSessionBound(): Promise<Session | null> {
   return rejoinInFlight
 }
 
-async function leavePreviousSeat() {
+/** Leave the bound seat (if any) and clear local session without UI reset. */
+export async function leavePreviousSeat() {
   const prev = loadSession()
   if (!prev) return
   try {
@@ -147,6 +158,7 @@ async function leavePreviousSeat() {
   } catch {
     /* old room may already be gone */
   }
+  // Intentional leave — don't bounce the UI via sessionLost.
   clearSession()
 }
 
@@ -162,15 +174,16 @@ export async function createGame(name: string, language: 'sv' | 'en', hostPlays 
 }
 
 export async function joinGame(code: string, name: string) {
+  const normalized = code.toUpperCase()
   const prev = loadSession()
-  if (prev && prev.code === code.toUpperCase()) {
+  if (prev && prev.code === normalized) {
     const rebound = await ensureSessionBound()
     if (rebound) return { ok: true, code: rebound.code, playerId: rebound.playerId }
   }
   await leavePreviousSeat()
   const res = await emitAck<{ ok?: boolean; error?: string; playerId?: string; code?: string }>(
     'join',
-    { code, name },
+    { code: normalized, name },
   )
   if (res.error || !res.code || !res.playerId) throw new Error(res.error || 'Kunde inte gå med')
   saveSession({ code: res.code, playerId: res.playerId, name })

@@ -25,6 +25,8 @@ export type Player = {
   host: boolean
   /** false = hostar bara / TV, spelar inte */
   playing: boolean
+  /** Set when socket drops; used to prune seats after grace (survives Redis hydrate). */
+  disconnectedAt?: number | null
 }
 
 export type PulseNote = {

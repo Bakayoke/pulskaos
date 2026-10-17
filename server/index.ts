@@ -407,7 +407,7 @@ io.on('connection', (socket) => {
 
 setInterval(() => {
   for (const code of tickRooms()) broadcastRoom(code)
-  pruneIdleRooms()
+  pruneIdleRooms((code) => broadcastRoom(code))
 }, 100)
 
 async function boot() {

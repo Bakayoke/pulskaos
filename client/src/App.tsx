@@ -2,12 +2,13 @@ import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'rea
 import {
   bindConnection,
   bindRoom,
+  bindSessionLost,
   backToLobby,
-  clearSession,
   createGame,
   getSocket,
   joinGame,
   leaveGame,
+  leavePreviousSeat,
   loadSession,
   pulseHit,
   rejoinGame,
@@ -109,6 +110,11 @@ export default function App() {
     getSocket()
     bindRoom(setRoom)
     bindConnection(setSocketOk)
+    bindSessionLost(() => {
+      setRoom(null)
+      const join = new URLSearchParams(window.location.search).get('join')
+      setScreen(join ? 'join' : 'home')
+    })
     const params = new URLSearchParams(window.location.search)
     const join = params.get('join')?.toUpperCase() ?? ''
     if (join) {
@@ -117,7 +123,9 @@ export default function App() {
       const existing = loadSession()
       // Invite link wins over a stale party on another code.
       if (existing && existing.code !== join) {
-        clearSession()
+        void leavePreviousSeat().then(() => {
+          /* stay on join form */
+        })
         return
       }
     }

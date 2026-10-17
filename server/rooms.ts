@@ -80,8 +80,78 @@ export function getBinding(socketId: string) {
   return socketToPlayer.get(socketId) ?? null
 }
 
+/** Steal this socket from any previous seat so create/join never leave ghost-online players. */
+function claimSocket(socketId: string, code: string, playerId: string) {
+  const prev = socketToPlayer.get(socketId)
+  if (prev && (prev.code !== code || prev.playerId !== playerId)) {
+    const oldRoom = getRoom(prev.code)
+    const oldPlayer = oldRoom?.players.find((p) => p.id === prev.playerId)
+    if (oldPlayer && oldPlayer.socketId === socketId) {
+      oldPlayer.connected = false
+      oldPlayer.socketId = null
+      oldPlayer.disconnectedAt = Date.now()
+      if (oldRoom) touch(oldRoom)
+    }
+    socketToPlayer.delete(socketId)
+  }
+  socketToPlayer.set(socketId, { code, playerId })
+}
+
+function applyDisconnectGrace(room: Room, player: Player, onChange: (code: string) => void) {
+  const key = `${room.code}:${player.id}`
+  const existing = disconnectTimers.get(key)
+  if (existing) clearTimeout(existing)
+
+  const timer = setTimeout(() => {
+    disconnectTimers.delete(key)
+    finalizeDisconnect(room.code, player.id, onChange)
+  }, DISCONNECT_GRACE_MS)
+  disconnectTimers.set(key, timer)
+}
+
+function finalizeDisconnect(code: string, playerId: string, onChange: (code: string) => void) {
+  const r = getRoom(code)
+  if (!r) return
+  const p = r.players.find((x) => x.id === playerId)
+  if (!p || p.connected || p.socketId) return
+  if (r.status === 'lobby') {
+    r.players = r.players.filter((x) => x.id !== p.id)
+    delete r.lobbyReady[p.id]
+    if (p.host && r.players.length) {
+      r.players[0]!.host = true
+      r.hostId = r.players[0]!.id
+    }
+    if (!r.players.length) {
+      rooms.delete(r.code)
+      usedBlitz.delete(r.code)
+      onChange(r.code)
+      return
+    }
+    touch(r)
+    onChange(r.code)
+    return
+  }
+  // Mid-game: keep seat for scores, but pass host so the party isn't stuck.
+  if (p.host) {
+    const next =
+      r.players.find((x) => x.id !== p.id && x.connected) ??
+      r.players.find((x) => x.id !== p.id)
+    if (next) {
+      p.host = false
+      next.host = true
+      r.hostId = next.id
+      setBanner(r, `${next.name} tar över host`, 'info', 2400)
+      touch(r)
+      onChange(r.code)
+    }
+  }
+  // Seat kept — clear so the idle prune loop doesn't re-fire every tick.
+  p.disconnectedAt = null
+}
+
 export function hydrateRooms(list: Room[]) {
   rooms.clear()
+  const now = Date.now()
   for (const r of list) {
     if (!r.echo.avatars) r.echo.avatars = {}
     if (!r.echo.emojiFails) r.echo.emojiFails = []
@@ -94,6 +164,7 @@ export function hydrateRooms(list: Room[]) {
       // Sockets die with the process — never restore ghost "online" from Redis.
       p.connected = false
       p.socketId = null
+      p.disconnectedAt = p.disconnectedAt ?? now
     }
     if (r.pulse) {
       if (!r.pulse.lastGrades) r.pulse.lastGrades = {}
@@ -110,12 +181,22 @@ export function hydrateRooms(list: Room[]) {
   }
 }
 
-export function pruneIdleRooms() {
+export function pruneIdleRooms(onChange?: (code: string) => void) {
   const now = Date.now()
   for (const [code, room] of rooms) {
     if (now - room.updatedAt > IDLE_MS) {
       rooms.delete(code)
       usedBlitz.delete(code)
+      continue
+    }
+    // Hydrated / abandoned seats without a live disconnect timer.
+    for (const p of [...room.players]) {
+      if (p.connected || p.socketId) continue
+      const since = p.disconnectedAt ?? room.updatedAt
+      if (now - since < DISCONNECT_GRACE_MS) continue
+      const key = `${room.code}:${p.id}`
+      if (disconnectTimers.has(key)) continue
+      finalizeDisconnect(room.code, p.id, onChange ?? (() => {}))
     }
   }
 }
@@ -179,6 +260,7 @@ export function createRoom(
     connected: true,
     host: true,
     playing: hostPlays,
+    disconnectedAt: null,
   }
 
   const room: Room = {
@@ -209,7 +291,7 @@ export function createRoom(
   }
 
   rooms.set(code, room)
-  socketToPlayer.set(socketId, { code, playerId })
+  claimSocket(socketId, code, playerId)
   touch(room)
   return { room, playerId }
 }
@@ -234,8 +316,9 @@ export function joinRoom(
     connected: true,
     host: false,
     playing: true,
+    disconnectedAt: null,
   })
-  socketToPlayer.set(socketId, { code: room.code, playerId })
+  claimSocket(socketId, room.code, playerId)
   touch(room)
   return { room, playerId }
 }
@@ -253,18 +336,14 @@ export function reconnectSocket(code: string, playerId: string, socketId: string
     disconnectTimers.delete(key)
   }
 
-  // Drop any stale binding for this socket or the player's previous socket.
-  const prev = socketToPlayer.get(socketId)
-  if (prev && (prev.code !== room.code || prev.playerId !== playerId)) {
-    socketToPlayer.delete(socketId)
-  }
   if (player.socketId && player.socketId !== socketId) {
     socketToPlayer.delete(player.socketId)
   }
 
+  claimSocket(socketId, room.code, playerId)
   player.socketId = socketId
   player.connected = true
-  socketToPlayer.set(socketId, { code: room.code, playerId })
+  player.disconnectedAt = null
   touch(room)
   return { room, playerId }
 }
@@ -292,52 +371,10 @@ export function disconnectSocket(socketId: string, onChange: (code: string) => v
   socketToPlayer.delete(socketId)
   player.connected = false
   player.socketId = null
+  player.disconnectedAt = Date.now()
   touch(room)
   onChange(room.code)
-
-  const key = `${room.code}:${player.id}`
-  const existing = disconnectTimers.get(key)
-  if (existing) clearTimeout(existing)
-
-  const timer = setTimeout(() => {
-    disconnectTimers.delete(key)
-    const r = getRoom(binding.code)
-    if (!r) return
-    const p = r.players.find((x) => x.id === binding.playerId)
-    if (!p || p.connected || p.socketId) return
-    if (r.status === 'lobby') {
-      r.players = r.players.filter((x) => x.id !== p.id)
-      delete r.lobbyReady[p.id]
-      if (p.host && r.players.length) {
-        r.players[0]!.host = true
-        r.hostId = r.players[0]!.id
-      }
-      if (!r.players.length) {
-        rooms.delete(r.code)
-        usedBlitz.delete(r.code)
-        onChange(r.code)
-        return
-      }
-      touch(r)
-      onChange(r.code)
-      return
-    }
-    // Mid-game: keep seat for scores, but pass host so the party isn't stuck.
-    if (p.host) {
-      const next =
-        r.players.find((x) => x.id !== p.id && x.connected) ??
-        r.players.find((x) => x.id !== p.id)
-      if (next) {
-        p.host = false
-        next.host = true
-        r.hostId = next.id
-        setBanner(r, `${next.name} tar över host`, 'info', 2400)
-        touch(r)
-        onChange(r.code)
-      }
-    }
-  }, DISCONNECT_GRACE_MS)
-  disconnectTimers.set(key, timer)
+  applyDisconnectGrace(room, player, onChange)
 }
 
 export function setLanguage(code: string, playerId: string, language: 'sv' | 'en') {
