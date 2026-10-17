@@ -408,15 +408,45 @@ function Home({ onCreate, onJoin }: { onCreate: () => void; onJoin: () => void }
   )
 }
 
-const SWISH_FIKA =
-  'https://app.swish.nu/1/p/sw/?sw=46730457930&msg=' +
-  encodeURIComponent('Fika · Pulskaos') +
-  '&edit=amt,msg'
+const SWISH_NUMBER = '46730457930'
+const SWISH_MSG = 'Fika · Pulskaos'
+
+/** Official https link — Universal Link into Swish on phone, download page on desktop. */
+const SWISH_HTTPS =
+  `https://app.swish.nu/1/p/sw/?sw=${SWISH_NUMBER}&msg=${encodeURIComponent(SWISH_MSG)}`
+
+/** Native scheme — most reliable “open the app now” on iOS/Android. */
+const SWISH_APP =
+  'swish://payment?data=' +
+  encodeURIComponent(
+    JSON.stringify({
+      version: 1,
+      payee: { value: SWISH_NUMBER },
+      message: { value: SWISH_MSG },
+    }),
+  )
+
+function openSwishFika(e: { preventDefault: () => void }) {
+  e.preventDefault()
+  const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  if (!mobile) {
+    window.open(SWISH_HTTPS, '_blank', 'noopener,noreferrer')
+    return
+  }
+  // Same-tab navigation — required for app links (target=_blank often stays in browser).
+  window.location.href = SWISH_APP
+  window.setTimeout(() => {
+    // App missing → fall back to the official https page.
+    if (document.visibilityState === 'visible') {
+      window.location.href = SWISH_HTTPS
+    }
+  }, 900)
+}
 
 function FikaLink({ compact }: { compact?: boolean } = {}) {
   return (
     <p className={`fika-wrap${compact ? ' compact' : ''}`}>
-      <a className="fika-link" href={SWISH_FIKA} target="_blank" rel="noreferrer">
+      <a className="fika-link" href={SWISH_HTTPS} onClick={openSwishFika}>
         Bjud på fika
         <span>Swish</span>
       </a>
