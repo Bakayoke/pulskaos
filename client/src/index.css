@@ -1575,47 +1575,8 @@ body.tv-mode .session-actions {
 }
 
 body.tv-mode .sister-label,
-body.tv-mode .sister-games,
-body.tv-mode .fika-wrap {
+body.tv-mode .sister-games {
   display: none;
-}
-
-.fika-wrap {
-  margin: 1.35rem 0 0;
-  text-align: center;
-}
-
-.fika-wrap.compact {
-  margin-top: 0.85rem;
-}
-
-.fika-link {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  text-decoration: none;
-  color: var(--text);
-  padding: 0.5rem 0.95rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 196, 120, 0.35);
-  background: rgba(255, 176, 80, 0.08);
-  font-size: 0.9rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.fika-link span {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.fika-link:hover {
-  border-color: rgba(255, 196, 120, 0.65);
-  background: rgba(255, 176, 80, 0.14);
 }
 
 input {
